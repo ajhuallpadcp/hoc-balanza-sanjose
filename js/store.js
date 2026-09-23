@@ -2,46 +2,47 @@
    HOCHSCHILD · CONTROL BALANZA SAN JOSÉ
    store.js — estado y datos simulados del prototipo (sin backend real)
    ========================================================================= */
-(function(){
+(function () {
   "use strict";
 
   var seq = { ticket: 1, viaje: 1, estadia: 1, tablet: 1, sync: 1 };
-  function nextId(prefix, key){
+  function nextId(prefix, key) {
     var n = seq[key]++;
     return prefix + '-' + String(n).padStart(4, '0');
   }
-  function nowStr(){
+  function nowStr() {
     var d = new Date();
-    return d.toLocaleDateString('es-PE', {day:'2-digit', month:'2-digit'}) + ' ' +
-           d.toLocaleTimeString('es-PE', {hour:'2-digit', minute:'2-digit'});
+    return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' +
+      d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
   }
-  function rand(min, max){ return Math.round(min + Math.random() * (max - min)); }
+  function rand(min, max) { return Math.round(min + Math.random() * (max - min)); }
 
   var INITIAL_TABLETS = [
-    { id: 'TB-0001', code: 'TAB-11', clas: 'fija', camion: 'V-101', status: 'disponible', since: '02/03/2026' },
-    { id: 'TB-0002', code: 'TAB-12', clas: 'fija', camion: 'V-104', status: 'disponible', since: '02/03/2026' },
-    { id: 'TB-0003', code: 'TAB-13', clas: 'fija', camion: null,   status: 'sin_asociar', since: '18/08/2026' },
-    { id: 'TB-0004', code: 'TAB-21', clas: 'pool', camion: null,   status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0005', code: 'TAB-22', clas: 'pool', camion: null,   status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0006', code: 'TAB-23', clas: 'pool', camion: null,   status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0007', code: 'TAB-30', clas: 'repuesto', camion: null, status: 'disponible', since: '10/05/2026' }
+    { id: 'TB-0001', clas: 'fija', camion: 'V-101', status: 'disponible', since: '02/03/2026' },
+    { id: 'TB-0002', clas: 'fija', camion: 'V-104', status: 'disponible', since: '02/03/2026' },
+    { id: 'TB-0003', clas: 'fija', camion: null, status: 'sin_asociar', since: '18/08/2026' },
+    { id: 'TB-0004', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0005', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0006', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0007', clas: 'repuesto', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0008', clas: 'repuesto', camion: null, status: 'mantenimiento', since: '15/09/2026' }
   ];
   var INITIAL_TABLET_HISTORY = [
-    { ts: '02/03/2026 08:14', detalle: 'TAB-11 asociada de forma fija a V-101', usuario: 'Marco Reyes' },
-    { ts: '02/03/2026 08:20', detalle: 'TAB-12 asociada de forma fija a V-104', usuario: 'Marco Reyes' },
-    { ts: '10/05/2026 09:02', detalle: 'TAB-21, TAB-22, TAB-23 configuradas en pool de terceros', usuario: 'Marco Reyes' }
+    { ts: '02/03/2026 08:14', detalle: 'TB-0001 asociada de forma fija a V-101', usuario: 'Marco Reyes' },
+    { ts: '02/03/2026 08:20', detalle: 'TB-0002 asociada de forma fija a V-104', usuario: 'Marco Reyes' },
+    { ts: '10/05/2026 09:02', detalle: 'TB-0004, TB-0005, TB-0006 configuradas en pool de terceros', usuario: 'Marco Reyes' }
   ];
-  function cloneSeed(arr){ return JSON.parse(JSON.stringify(arr)); }
+  function cloneSeed(arr) { return JSON.parse(JSON.stringify(arr)); }
 
   var Store = {
     role: 'admin', // admin | garita | propio | tercero
     online: true,
 
     users: {
-      admin:   { name: 'Marco Reyes',   role: 'Administrador',        initials: 'MR' },
-      garita:  { name: 'Rosa Huamán',   role: 'Garita',                initials: 'RH' },
-      propio:  { name: 'Luis Quispe',   role: 'Conductor · Propio',    initials: 'LQ' },
-      tercero: { name: 'Jorge Mamani',  role: 'Conductor · Tercero',   initials: 'JM' }
+      admin: { name: 'Marco Reyes', role: 'Administrador', initials: 'MR' },
+      garita: { name: 'Rosa Huamán', role: 'Garita', initials: 'RH' },
+      propio: { name: 'Luis Quispe', role: 'Conductor · Propio', initials: 'LQ' },
+      tercero: { name: 'Jorge Mamani', role: 'Conductor · Tercero', initials: 'JM' }
     },
 
     catalogs: {
@@ -66,31 +67,31 @@
 
     tickets: [],     // Módulo 2 · Mis Viajes
     estadias: [],    // Módulo 4/5 · Garita y Terceros
-    tabletHistory: cloneSeed(INITIAL_TABLET_HISTORY), // RF060 · historial de asociaciones
+    tabletHistory: cloneSeed(INITIAL_TABLET_HISTORY),
     syncQueue: [],   // {id, tipo, referencia, status, ts}
     activity: [],    // feed de actividad reciente
 
     // ---- helpers de dominio ----
-    genTicketId: function(){ return nextId('TCK', 'ticket'); },
-    genViajeId: function(){ return nextId('VJ', 'viaje'); },
-    genEstadiaId: function(){ return nextId('EST', 'estadia'); },
-    genTabletId: function(){ return nextId('TB', 'tablet'); },
+    genTicketId: function () { return nextId('TCK', 'ticket'); },
+    genViajeId: function () { return nextId('VJ', 'viaje'); },
+    genEstadiaId: function () { return nextId('EST', 'estadia'); },
+    genTabletId: function () { return nextId('TB', 'tablet'); },
 
     nowStr: nowStr,
 
-    tabletFor: function(camion){
-      return this.tablets.find(function(t){ return t.clas === 'fija' && t.camion === camion; });
+    tabletFor: function (camion) {
+      return this.tablets.find(function (t) { return t.clas === 'fija' && t.camion === camion; });
     },
-    poolAvailable: function(){
-      return this.tablets.filter(function(t){ return t.clas === 'pool' && t.status === 'disponible'; });
+    poolAvailable: function () {
+      return this.tablets.filter(function (t) { return t.clas === 'pool' && t.status === 'disponible'; });
     },
 
-    addActivity: function(tipo, detalle, estado){
+    addActivity: function (tipo, detalle, estado) {
       this.activity.unshift({ ts: nowStr(), tipo: tipo, detalle: detalle, estado: estado || 'ok' });
-      if(this.activity.length > 30) this.activity.pop();
+      if (this.activity.length > 30) this.activity.pop();
     },
 
-    enqueueSync: function(tipo, referencia){
+    enqueueSync: function (tipo, referencia) {
       var item = {
         id: nextId('SYN', 'sync'),
         tipo: tipo,
@@ -102,23 +103,23 @@
       return item;
     },
 
-    pendingCount: function(){
-      return this.syncQueue.filter(function(i){ return i.status === 'pendiente' || i.status === 'sincronizando'; }).length;
+    pendingCount: function () {
+      return this.syncQueue.filter(function (i) { return i.status === 'pendiente' || i.status === 'sincronizando'; }).length;
     },
 
     // Genera un valor de peso plausible para simular la lectura del display (kg)
-    simulateWeight: function(kind){
-      if(kind === 'tara') return rand(8200, 11800);
-      if(kind === 'vacio') return rand(8300, 11900);
+    simulateWeight: function (kind) {
+      if (kind === 'tara') return rand(8200, 11800);
+      if (kind === 'vacio') return rand(8300, 11900);
       return rand(34000, 45500); // cargado
     },
     // Valor estimado por "promedio histórico" simulado ante balanza fuera de servicio
-    estimateWeight: function(kind){
+    estimateWeight: function (kind) {
       return this.simulateWeight(kind === 'cargado' ? 'cargado' : (kind === 'vacio' ? 'vacio' : 'tara'));
     },
 
     // Reinicia el estado transaccional para volver a ejecutar la demo desde cero.
-    reset: function(){
+    reset: function () {
       this.turno = { activo: false, camion: null, turnoNombre: null, tara: null, iniciadoEn: null };
       this.tickets = [];
       this.estadias = [];
