@@ -15,22 +15,29 @@
     return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' +
       d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
   }
+  function todayStr() {
+    var d = new Date();
+    var dd = String(d.getDate()).padStart(2, '0');
+    var mm = String(d.getMonth() + 1).padStart(2, '0');
+    var yyyy = d.getFullYear();
+    return dd + '/' + mm + '/' + yyyy;
+  }
   function rand(min, max) { return Math.round(min + Math.random() * (max - min)); }
 
   var INITIAL_TABLETS = [
-    { id: 'TB-0001', clas: 'fija', camion: 'V-101', status: 'disponible', since: '02/03/2026' },
-    { id: 'TB-0002', clas: 'fija', camion: 'V-104', status: 'disponible', since: '02/03/2026' },
-    { id: 'TB-0003', clas: 'fija', camion: null, status: 'sin_asociar', since: '18/08/2026' },
-    { id: 'TB-0004', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0005', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0006', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0007', clas: 'repuesto', camion: null, status: 'disponible', since: '10/05/2026' },
-    { id: 'TB-0008', clas: 'repuesto', camion: null, status: 'mantenimiento', since: '15/09/2026' }
+    { id: 'TB-0001', code: 'TAB-11', clas: 'fija', camion: 'V-101', status: 'disponible', since: '02/03/2026' },
+    { id: 'TB-0002', code: 'TAB-12', clas: 'fija', camion: 'V-104', status: 'disponible', since: '02/03/2026' },
+    { id: 'TB-0003', code: 'TAB-13', clas: 'fija', camion: null, status: 'sin_asociar', since: '18/08/2026' },
+    { id: 'TB-0004', code: 'TAB-21', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0005', code: 'TAB-22', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0006', code: 'TAB-23', clas: 'pool', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0007', code: 'TAB-30', clas: 'repuesto', camion: null, status: 'disponible', since: '10/05/2026' },
+    { id: 'TB-0008', code: 'TAB-31', clas: 'repuesto', camion: null, status: 'mantenimiento', since: '15/09/2026' }
   ];
   var INITIAL_TABLET_HISTORY = [
-    { ts: '02/03/2026 08:14', detalle: 'TB-0001 asociada de forma fija a V-101', usuario: 'Marco Reyes' },
-    { ts: '02/03/2026 08:20', detalle: 'TB-0002 asociada de forma fija a V-104', usuario: 'Marco Reyes' },
-    { ts: '10/05/2026 09:02', detalle: 'TB-0004, TB-0005, TB-0006 configuradas en pool de terceros', usuario: 'Marco Reyes' }
+    { ts: '02/03/2026 08:14', detalle: 'TAB-11 asociada de forma fija a V-101', usuario: 'Marco Reyes' },
+    { ts: '02/03/2026 08:20', detalle: 'TAB-12 asociada de forma fija a V-104', usuario: 'Marco Reyes' },
+    { ts: '10/05/2026 09:02', detalle: 'TAB-21, TAB-22, TAB-23 configuradas en pool de terceros', usuario: 'Marco Reyes' }
   ];
   function cloneSeed(arr) { return JSON.parse(JSON.stringify(arr)); }
 
@@ -75,9 +82,20 @@
     genTicketId: function () { return nextId('TCK', 'ticket'); },
     genViajeId: function () { return nextId('VJ', 'viaje'); },
     genEstadiaId: function () { return nextId('EST', 'estadia'); },
-    genTabletId: function () { return nextId('TB', 'tablet'); },
+    genTabletId: function () {
+      var max = 0;
+      (this.tablets || []).forEach(function (t) {
+        var m = String(t.id).match(/TB-(\d+)/);
+        if (m) {
+          var num = parseInt(m[1], 10);
+          if (num > max) max = num;
+        }
+      });
+      return 'TB-' + String(max + 1).padStart(4, '0');
+    },
 
     nowStr: nowStr,
+    todayStr: todayStr,
 
     tabletFor: function (camion) {
       return this.tablets.find(function (t) { return t.clas === 'fija' && t.camion === camion; });

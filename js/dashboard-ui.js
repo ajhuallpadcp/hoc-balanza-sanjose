@@ -82,7 +82,7 @@
       (opts.subtitle ? '<p>' + esc(opts.subtitle) + '</p>' : '') + '</div></div>' +
       '<div class="modal__body">' + (opts.body || '') + '</div>' +
       '<div class="modal__foot">' +
-      '<button class="btn btn-outline js-modal-cancel">Cancelar</button>' +
+      '<button class="btn btn-outline js-modal-cancel">' + esc(opts.cancelLabel || 'Cancelar') + '</button>' +
       '<button class="btn ' + (opts.danger ? 'btn-danger-outline' : 'btn-primary') + '" id="modal-confirm-btn">' + esc(opts.confirmLabel || 'Confirmar') + '</button>' +
       '</div>';
     var overlay = openModal(html);
@@ -98,7 +98,7 @@
      Modal de pesaje / captura OCR (RF041–RF055)
      --------------------------------------------------------------------- */
   function openWeighModal(cfg, onConfirm) {
-    var state = { photo: false, ocrDone: false, ocrValue: null, estimated: false, timer: null };
+    var state = { photo: false, ocrDone: false, ocrValue: null, outOfService: false, timer: null };
 
     var html =
       '<div class="modal__head"><div><h3>' + esc(cfg.title) + '</h3>' +
@@ -106,7 +106,7 @@
       '<div class="modal__body">' +
       (cfg.allowOutOfService ? (
         '<div class="capture-toggle">' +
-        '<div><strong>Balanza fuera de servicio</strong><span>Se aplicará un valor estimado por promedio histórico</span></div>' +
+        '<div><strong>Balanza fuera de servicio</strong><span id="oos-subtitle">Activa si la balanza no está disponible para registrar evidencia</span></div>' +
         '<label class="switch"><input type="checkbox" id="oos-toggle"><span class="switch-track"></span></label>' +
         '</div>'
       ) : '') +
@@ -127,74 +127,112 @@
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
     }, overlay);
 
-    function renderCaptureUI() {
+    function renderCaptureUI(isEvidence) {
+      state.outOfService = !!isEvidence;
+      state.photo = false;
+      state.ocrDone = false;
+      state.ocrValue = null;
+      if (state.timer) { clearInterval(state.timer); state.timer = null; }
+      resultZone.innerHTML = '';
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = isEvidence ? 'Confirmar evidencia' : 'Confirmar peso';
+
+      var instruction = isEvidence
+        ? '<span style="display:inline-block;background:#FEF3C7;color:#92400E;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:6px;letter-spacing:.03em;">EVIDENCIA DE AUDITORÍA</span><br>Toma o sube una fotografía como EVIDENCIA de que la balanza está fuera de servicio.'
+        : 'Encuadra el display de la balanza dentro de la guía y toma la fotografía.';
+
+      var btnSimulateText = isEvidence ? 'Simular foto de evidencia' : 'Simular captura';
+
       captureZone.innerHTML =
-        '<div class="display-frame" id="display-frame">' +
+        '<div class="display-frame' + (isEvidence ? ' is-evidence' : '') + '" id="display-frame">' +
         '<div class="display-frame__guide"></div>' +
         ICON.camera +
-        '<p>Encuadra el display de la balanza dentro de la guía y toma la fotografía.</p>' +
+        '<p style="max-width:320px;margin:0 auto;">' + instruction + '</p>' +
         '<div class="capture-actions">' +
-        '<button class="btn btn-primary btn-sm" id="btn-simulate">Simular captura</button>' +
+        '<button class="btn btn-primary btn-sm" id="btn-simulate">' + btnSimulateText + '</button>' +
         '<button class="btn btn-outline btn-sm" id="btn-upload">' + ICON.upload + ' Subir foto</button>' +
         '<input type="file" accept="image/*" class="hidden-file-input" id="file-input">' +
         '</div>' +
         '</div>';
-      $('#btn-simulate', captureZone).addEventListener('click', function () { runCapture(null); });
+
+      $('#btn-simulate', captureZone).addEventListener('click', function () { runCapture(null, isEvidence); });
       $('#btn-upload', captureZone).addEventListener('click', function () { $('#file-input', captureZone).click(); });
       $('#file-input', captureZone).addEventListener('change', function (e) {
         var file = e.target.files[0];
         if (!file) return;
         var reader = new FileReader();
-        reader.onload = function (ev) { runCapture(ev.target.result); };
+        reader.onload = function (ev) { runCapture(ev.target.result, isEvidence); };
         reader.readAsDataURL(file);
       });
     }
 
-    function runCapture(photoDataUrl) {
+    function runCapture(photoDataUrl, isEvidence) {
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       state.photo = true;
       var frame = $('#display-frame', captureZone);
       frame.classList.add('has-photo');
-      frame.innerHTML = photoDataUrl
-        ? '<img src="' + photoDataUrl + '" alt="Fotografia capturada del display">'
-        : '<div style="color:#D8AC55;font-family:monospace;font-size:34px;letter-spacing:3px;">' + S.simulateWeight(cfg.kind) + '</div>';
 
-      resultZone.innerHTML =
-        '<div class="ocr-progress-box" id="ocr-progress-box">' +
-        '<div class="ocr-progress-head">' +
-        '<span class="ocr-progress-title" id="ocr-progress-title">Procesando captura con OCR...</span>' +
-        '<span class="ocr-progress-pct" id="ocr-progress-pct">0%</span>' +
-        '</div>' +
-        '<div class="ocr-progress-track">' +
-        '<div class="ocr-progress-bar" id="ocr-progress-bar" style="width:0%;"></div>' +
-        '</div>' +
-        '</div>';
+      if (isEvidence) {
+        frame.innerHTML = photoDataUrl
+          ? '<img src="' + photoDataUrl + '" alt="Fotografía de evidencia">'
+          : '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;">' +
+            '<div style="color:#f87171;font-family:monospace;font-size:24px;letter-spacing:2px;font-weight:700;">[ OFFLINE / SIN SEÑAL ]</div>' +
+            '<div style="font-size:12px;color:#9ca3af;letter-spacing:0.5px;font-weight:500;">BALANZA FUERA DE SERVICIO · EVIDENCIA REGISTRADA</div>' +
+            '</div>';
 
-      var bar = $('#ocr-progress-bar', resultZone);
-      var pctText = $('#ocr-progress-pct', resultZone);
-      var titleText = $('#ocr-progress-title', resultZone);
-      var box = $('#ocr-progress-box', resultZone);
-      var currentPct = 0;
+        resultZone.innerHTML =
+          '<div class="evidence-box">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy-900);font-size:13.5px;">' +
+          '<span class="ocr-check-badge">' + ICON.check + '</span>' +
+          '<span>Fotografía de evidencia registrada</span>' +
+          '</div>' +
+          '<p class="form-hint" style="margin-top:6px;color:var(--gray-600);">Se ha registrado la evidencia fotográfica para auditoría certificando que la balanza está fuera de servicio. No se registrará pesaje.</p>' +
+          '</div>';
 
-      state.timer = setInterval(function () {
-        currentPct += Math.floor(Math.random() * 14) + 8;
-        if (currentPct >= 100) {
-          currentPct = 100;
-          clearInterval(state.timer);
-          state.timer = null;
-          bar.style.width = '100%';
-          bar.classList.add('is-done');
-          pctText.textContent = '100%';
-          box.classList.add('is-done');
-          titleText.innerHTML = '<span class="ocr-check-badge">' + ICON.check + '</span> Procesamiento OCR completado';
-          setTimeout(function () {
-            finishOcr();
-          }, 350);
-        } else {
-          bar.style.width = currentPct + '%';
-          pctText.textContent = currentPct + '%';
-        }
-      }, 70);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirmar evidencia';
+      } else {
+        frame.innerHTML = photoDataUrl
+          ? '<img src="' + photoDataUrl + '" alt="Fotografia capturada del display">'
+          : '<div style="color:#D8AC55;font-family:monospace;font-size:34px;letter-spacing:3px;">' + S.simulateWeight(cfg.kind) + '</div>';
+
+        resultZone.innerHTML =
+          '<div class="ocr-progress-box" id="ocr-progress-box">' +
+          '<div class="ocr-progress-head">' +
+          '<span class="ocr-progress-title" id="ocr-progress-title">Procesando captura con OCR...</span>' +
+          '<span class="ocr-progress-pct" id="ocr-progress-pct">0%</span>' +
+          '</div>' +
+          '<div class="ocr-progress-track">' +
+          '<div class="ocr-progress-bar" id="ocr-progress-bar" style="width:0%;"></div>' +
+          '</div>' +
+          '</div>';
+
+        var bar = $('#ocr-progress-bar', resultZone);
+        var pctText = $('#ocr-progress-pct', resultZone);
+        var titleText = $('#ocr-progress-title', resultZone);
+        var box = $('#ocr-progress-box', resultZone);
+        var currentPct = 0;
+
+        state.timer = setInterval(function () {
+          currentPct += Math.floor(Math.random() * 14) + 8;
+          if (currentPct >= 100) {
+            currentPct = 100;
+            clearInterval(state.timer);
+            state.timer = null;
+            bar.style.width = '100%';
+            bar.classList.add('is-done');
+            pctText.textContent = '100%';
+            box.classList.add('is-done');
+            titleText.innerHTML = '<span class="ocr-check-badge">' + ICON.check + '</span> Procesamiento OCR completado';
+            setTimeout(function () {
+              finishOcr();
+            }, 350);
+          } else {
+            bar.style.width = currentPct + '%';
+            pctText.textContent = currentPct + '%';
+          }
+        }, 70);
+      }
     }
 
     function finishOcr() {
@@ -217,56 +255,41 @@
         $('#manual-flag', resultZone).style.display = (Number(input.value) !== val) ? 'flex' : 'none';
       });
       confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirmar peso';
     }
 
-    function renderEstimatedUI() {
-      var est = S.estimateWeight(cfg.kind);
-      state.estimated = true;
-      state.ocrValue = est;
-      captureZone.innerHTML = '';
-      if (cfg.hideEstimatedValue) {
-        resultZone.innerHTML =
-          '<div class="estimated-note">' + ICON.lock +
-          '<span>Balanza fuera de servicio: se aplicara automaticamente un valor estimado por promedio historico. Conforme al flujo definido para volquetes propios, el valor estimado no se muestra al conductor.</span></div>';
-      } else {
-        resultZone.innerHTML =
-          '<div class="estimated-note">' + ICON.warn +
-          '<span>Balanza fuera de servicio. Valor estimado por promedio historico:</span></div>' +
-          '<div class="ocr-result__value-row" style="margin-top:12px;">' +
-          '<div class="field"><label>Valor estimado</label>' +
-          '<div class="field-shell"><input type="number" id="ocr-value" class="plain" value="' + est + '" style="border:none;padding:11px 12px;"></div>' +
-          '</div><div class="ocr-unit">kg</div>' +
-          '</div>' +
-          '<p class="form-hint">El registro quedara identificado como <strong>Estimado</strong> para diferenciarlo de un pesaje real.</p>';
-      }
-      confirmBtn.disabled = false;
-    }
-
-    renderCaptureUI();
+    renderCaptureUI(false);
 
     if (cfg.allowOutOfService) {
       $('#oos-toggle', overlay).addEventListener('change', function (e) {
         if (state.timer) { clearInterval(state.timer); state.timer = null; }
-        confirmBtn.disabled = true;
-        if (e.target.checked) { renderEstimatedUI(); }
-        else { state.estimated = false; renderCaptureUI(); resultZone.innerHTML = ''; }
+        var sub = $('#oos-subtitle', overlay);
+        if (e.target.checked) {
+          if (sub) sub.textContent = 'Registrar fotografía como EVIDENCIA para auditoría';
+          renderCaptureUI(true);
+        } else {
+          if (sub) sub.textContent = 'Activa si la balanza no está disponible para registrar evidencia';
+          renderCaptureUI(false);
+        }
       });
     }
 
     confirmBtn.addEventListener('click', function () {
-      var finalVal = state.ocrValue;
+      var isOOS = state.outOfService;
+      var finalVal = isOOS ? null : state.ocrValue;
       var manual = false;
       var inputEl = $('#ocr-value', overlay);
-      if (inputEl) {
+      if (inputEl && !isOOS) {
         finalVal = Number(inputEl.value);
-        manual = !state.estimated && (finalVal !== state.ocrValue);
+        manual = (finalVal !== state.ocrValue);
       }
       closeModal();
       onConfirm && onConfirm({
         value: finalVal,
-        ocrValue: state.ocrValue,
+        ocrValue: isOOS ? null : state.ocrValue,
         manual: manual,
-        estimated: state.estimated,
+        estimated: false,
+        outOfService: isOOS,
         hasPhoto: state.photo
       });
     });

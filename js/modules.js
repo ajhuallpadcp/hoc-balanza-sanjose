@@ -31,6 +31,10 @@
   }
   function weighSummary(w) {
     if (!w) return '<span class="muted" style="color:var(--gray-400)">—</span>';
+    if (w.outOfService) {
+      return '<span class="badge badge-warning" title="Balanza fuera de servicio · Evidencia en auditoría">Fuera de servicio (Evidencia)</span>';
+    }
+    if (w.value == null) return '<span class="muted" style="color:var(--gray-400)">—</span>';
     var bits = [w.value.toLocaleString('es-PE') + ' kg'];
     return w.value.toLocaleString('es-PE') + ' kg' +
       (w.estimated ? ' <span class="badge badge-warning" style="margin-left:4px;">Estimado</span>' : '') +
@@ -192,8 +196,9 @@
         var k = S.tickets.find(function (x) { return x.id === id; });
         k.pesajeCargado = res;
         S.enqueueSync('Pesaje cargado', id);
-        S.addActivity('Pesaje cargado', 'Ticket ' + id + (res.estimated ? ' · valor estimado' : ' · ' + res.value.toLocaleString('es-PE') + ' kg'), 'ok');
-        toast('Pesaje cargado registrado.', 'success');
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + res.value.toLocaleString('es-PE') + ' kg' : '');
+        S.addActivity('Pesaje cargado', 'Ticket ' + id + actDet, 'ok');
+        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje cargado registrado.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
@@ -290,7 +295,7 @@
         actions = '<button class="btn btn-table-warning btn-sm js-liberar-repuesto" data-id="' + t.id + '">Liberar</button>';
       }
       return '<tr>' +
-        '<td><strong>' + t.id + '</strong></td>' +
+        '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:12px;">' + esc(t.code || t.id) + '</span></td>' +
         '<td>' + esc(CLAS_LABEL[t.clas]) + '</td>' +
         '<td class="text-center">' + (t.camion ? esc(t.camion) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td class="text-center">' + (STATUS_BADGE[t.status] || t.status) + '</td>' +
@@ -305,19 +310,34 @@
 
   function attachTabletsHandlers(root) {
     $('#btn-enroll', root).addEventListener('click', function () {
+      var nextDevId = S.genTabletId();
       var html = '<div class="form-grid">' +
-        fieldTxt('Identificador único', 'f-devid', '', S.genTabletId()) +
+        fieldTxt('Identificador único', 'f-devid', '', nextDevId) +
+        fieldTxt('Código visible', 'f-code', 'Ej. TAB-31') +
         fieldSel('Clasificación', 'f-clas', '<option value="fija">Camión propio</option><option value="pool">Pool de terceros</option><option value="repuesto">Repuesto</option>') +
         '</div>';
       confirmDialog({ title: 'Enrolar tablet', body: html, confirmLabel: 'Enrolar' }, function () {
         var clas = $('#f-clas').value;
-        var devId = $('#f-devid').value;
+        var devId = ($('#f-devid').value || '').trim();
+        if (!devId) {
+          toast('El identificador único no puede estar vacío.', 'error');
+          return;
+        }
+        if (S.tablets.some(function (t) { return t.id === devId; })) {
+          toast('El identificador ' + devId + ' ya está registrado en el parque de tablets.', 'error');
+          return;
+        }
+        var code = ($('#f-code').value || '').trim() || devId;
         var t = {
-          id: devId, code: devId, clas: clas,
-          camion: null, status: clas === 'fija' ? 'sin_asociar' : 'disponible', since: S.nowStr()
+          id: devId,
+          code: code,
+          clas: clas,
+          camion: null,
+          status: clas === 'fija' ? 'sin_asociar' : 'disponible',
+          since: S.todayStr ? S.todayStr() : '23/09/2026'
         };
         S.tablets.push(t);
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: t.id + ' enrolada como ' + CLAS_LABEL[clas], usuario: S.users.admin.name });
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: t.id + ' (' + t.code + ') enrolada como ' + CLAS_LABEL[clas], usuario: S.users.admin.name });
         toast('Tablet ' + t.id + ' enrolada correctamente.', 'success');
         Shell.refreshCurrent();
       });
@@ -401,10 +421,11 @@
     var rows = activas.map(function (e) {
       var cerrados = e.viajes.filter(function (v) { return v.estado === 'Cerrado'; }).length;
       var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
-      var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.id) + '</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>';
+      var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.code || tablet.id) + '</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>';
       var salidaBtn = e.estado === 'activa'
         ? '<button class="btn btn-outline btn-sm js-exit" data-id="' + e.id + '"' + (!tablet ? ' disabled title="Asigna una tablet primero"' : '') + '>Registrar salida</button>'
         : '<span class="badge badge-neutral">Cerrada</span>';
+      var pinBtn = '<button class="btn btn-outline btn-sm js-show-pin" data-id="' + e.id + '">Mostrar PIN</button>';
       return '<tr>' +
         '<td><strong>' + esc(e.placa) + '</strong></td>' +
         '<td>' + esc(e.empresa) + '</td>' +
@@ -414,7 +435,7 @@
         '<td class="text-center">' + e.viajes.length + ' (' + cerrados + ' cerrados)</td>' +
         '<td class="text-center">' + (e.estado === 'activa' ? '<span class="badge badge-info">Activa</span>' : '<span class="badge badge-success">Cerrada</span>') + '</td>' +
         '<td class="text-center muted" style="color:var(--gray-500);">' + esc(e.ingresoEn) + '</td>' +
-        '<td class="text-center"><div class="row-actions">' + salidaBtn + '</div></td>' +
+        '<td class="text-center"><div class="row-actions">' + pinBtn + salidaBtn + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
@@ -435,17 +456,19 @@
         '</div>';
       confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
         var placa = ($('#f-placa').value || 'S/PATENTE').toUpperCase();
+        var pin = String(Math.floor(1000 + Math.random() * 9000));
         var e = {
           id: S.genEstadiaId(), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
           placa: placa, conductor: $('#f-conductor').value || 'Sin registrar',
           documento: $('#f-documento').value || '—',
+          pin: pin,
           destino: $('#f-destino').value,
           tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr()
         };
         S.estadias.unshift(e);
         S.enqueueSync('Ingreso de tercero', placa);
         S.addActivity('Ingreso registrado', placa + ' · ' + e.empresa, 'ok');
-        toast('Estadía registrada para ' + placa + '.', 'success');
+        toast('Estadía registrada para ' + placa + '. PIN de acceso: ' + pin + '.', 'success');
         Shell.refreshCurrent();
       });
     });
@@ -455,16 +478,16 @@
       var e = S.estadias.find(function (x) { return x.id === id; });
       var libres = S.poolAvailable();
       if (libres.length === 0) { toast('No hay tablets disponibles en el pool de terceros.', 'error'); return; }
-      var html = '<div class="form-grid">' + fieldSel('Tablet disponible', 'f-tablet', optionList(libres.map(function (t) { return t.id; }))) + '</div>' +
+      var html = '<div class="form-grid">' + fieldSel('Tablet disponible', 'f-tablet', optionList(libres.map(function (t) { return t.code || t.id; }))) + '</div>' +
         '<p class="form-hint" style="margin-top:8px;">Solo se listan tablets clasificadas como pool de terceros y disponibles.</p>';
       confirmDialog({ title: 'Asignar tablet temporal', subtitle: e ? e.placa : '', body: html, confirmLabel: 'Asignar' }, function () {
-        var tid = $('#f-tablet').value;
-        var tablet = S.tablets.find(function (t) { return t.id === tid; });
+        var code = $('#f-tablet').value;
+        var tablet = S.tablets.find(function (t) { return t.code === code || t.id === code; });
         tablet.status = 'ocupada';
         e.tabletId = tablet.id;
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: tablet.id + ' asignada temporalmente a patente ' + e.placa + ' (' + e.id + ')', usuario: S.users.garita.name });
-        S.addActivity('Tablet asignada', tablet.id + ' → ' + e.placa, 'ok');
-        toast('Tablet ' + tablet.id + ' asignada. El conductor ya puede operar el módulo de Terceros.', 'success');
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet.code || tablet.id) + ' asignada temporalmente a patente ' + e.placa + ' (' + e.id + ')', usuario: S.users.garita.name });
+        S.addActivity('Tablet asignada', (tablet.code || tablet.id) + ' → ' + e.placa, 'ok');
+        toast('Tablet ' + (tablet.code || tablet.id) + ' asignada. El conductor ya puede operar el módulo de Terceros.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
@@ -486,6 +509,48 @@
         S.addActivity('Salida registrada', e.placa + ' · estadía cerrada', 'ok');
         toast('Salida registrada. Tablet liberada al pool.', 'success');
         Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-show-pin', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      if (!e.pin) e.pin = String(Math.floor(1000 + Math.random() * 9000));
+
+      var body =
+        '<div style="display:flex;flex-direction:column;gap:12px;">' +
+        '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(e.conductor) + '</span></div>' +
+        '<div class="info-row"><span class="label">Documento / Usuario</span><span class="value"><strong>' + esc(e.documento || e.placa) + '</strong></span></div>' +
+        '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(e.placa) + '</span></div>' +
+        '<div class="info-row"><span class="label">Empresa</span><span class="value">' + esc(e.empresa) + '</span></div>' +
+
+        '<div class="pin-display-box">' +
+        '<span class="pin-display-label">PIN / Contraseña temporal</span>' +
+        '<span class="pin-display-number">' + e.pin + '</span>' +
+        '<span class="pin-display-hint">Clave de acceso para iniciar sesión en el módulo de Terceros</span>' +
+        '</div>' +
+
+        '<div class="pin-warning-box">' +
+        ICON.warn +
+        '<div>' +
+        '<strong>Cambio obligatorio de contraseña</strong>' +
+        '<p>El conductor debe cambiar esta contraseña temporal inmediatamente después de haber ingresado con ella.</p>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+
+      confirmDialog({
+        title: 'PIN de acceso para terceros',
+        subtitle: 'Patente ' + e.placa + ' · ' + e.conductor,
+        body: body,
+        cancelLabel: 'Cerrar',
+        confirmLabel: 'Copiar PIN'
+      }, function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(e.pin);
+        }
+        toast('PIN ' + e.pin + ' copiado al portapapeles.', 'success');
       });
     }, root);
   }
@@ -516,7 +581,7 @@
       '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(estadia.placa) + '</span></div>' +
       '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(estadia.conductor) + '</span></div>' +
       '<div class="info-row"><span class="label">Documento</span><span class="value">' + esc(estadia.documento || '—') + '</span></div>' +
-      '<div class="info-row"><span class="label">Tablet asignada</span><span class="value">' + esc(tablet.id) + '</span></div>' +
+      '<div class="info-row"><span class="label">Tablet asignada</span><span class="value">' + esc(tablet ? (tablet.code || tablet.id) : '—') + '</span></div>' +
       '<div class="info-row"><span class="label">Destino / sector</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
       '</div></div>' +
 
@@ -545,7 +610,7 @@
     if (step === 'cargado') btn = '<button class="btn btn-gold btn-block" id="btn-trip-cargado">Registrar pesaje cargado</button>';
     else if (step === 'descarga') btn = '<button class="btn btn-outline btn-block" id="btn-trip-descarga">Registrar descarga</button>';
     else if (step === 'vacio') btn = '<button class="btn btn-gold btn-block" id="btn-trip-vacio">Registrar pesaje vacío</button>';
-    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:15px;">' + v.neto.toLocaleString('es-PE') + ' kg</span></div>';
+    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:15px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
     return rows + '<div style="margin-top:12px;">' + btn + '</div>';
   }
 
@@ -580,7 +645,7 @@
         res.ts = S.nowStr();
         v.cargado = res;
         S.enqueueSync('Pesaje cargado tercero', v.id);
-        toast('Pesaje cargado registrado.', 'success');
+        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje cargado registrado.', 'success');
         Shell.refreshCurrent();
       });
     });
@@ -599,11 +664,16 @@
       openWeighModal({ title: 'Pesaje vacío', subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: 'vacio', allowOutOfService: true, hideEstimatedValue: false }, function (res) {
         res.ts = S.nowStr();
         v.vacio = res;
-        v.neto = Math.max(0, v.cargado.value - v.vacio.value);
+        if ((v.cargado && v.cargado.outOfService) || res.outOfService) {
+          v.neto = null;
+        } else {
+          v.neto = Math.max(0, (v.cargado ? v.cargado.value || 0 : 0) - (v.vacio.value || 0));
+        }
         v.estado = 'Cerrado';
         S.enqueueSync('Viaje tercero', v.id);
-        S.addActivity('Viaje cerrado', v.id + ' · peso neto ' + v.neto.toLocaleString('es-PE') + ' kg', 'ok');
-        toast('Viaje cerrado. Peso neto: ' + v.neto.toLocaleString('es-PE') + ' kg.', 'success');
+        var actDet = v.neto != null ? ' · peso neto ' + v.neto.toLocaleString('es-PE') + ' kg' : ' · balanza fuera de servicio (evidencia)';
+        S.addActivity('Viaje cerrado', v.id + actDet, 'ok');
+        toast('Viaje cerrado.' + (v.neto != null ? ' Peso neto: ' + v.neto.toLocaleString('es-PE') + ' kg.' : ' Registrado con evidencia de balanza fuera de servicio.'), 'success');
         Shell.refreshCurrent();
       });
     });
