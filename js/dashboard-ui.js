@@ -108,7 +108,7 @@
      Modal de pesaje / captura OCR (RF041–RF055)
      --------------------------------------------------------------------- */
   function openWeighModal(cfg, onConfirm) {
-    var state = { photo: false, ocrDone: false, ocrValue: null, outOfService: false, timer: null, fileName: null };
+    var state = { photo: false, ocrDone: false, ocrValue: null, simulatedWeight: null, outOfService: false, timer: null, fileName: null };
 
     var html =
       '<div class="modal__head"><div><h3>' + esc(cfg.title) + '</h3>' +
@@ -142,6 +142,7 @@
       state.photo = false;
       state.ocrDone = false;
       state.ocrValue = null;
+      state.simulatedWeight = null;
       state.fileName = null;
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       resultZone.innerHTML = '';
@@ -167,8 +168,8 @@
         '</div>';
 
       $('#btn-simulate', captureZone).addEventListener('click', function () {
-        var defaultName = isEvidence ? 'evidencia_balanza_fueraservicio.jpg' : 'captura_display_balanza.jpg';
-        runCapture(null, isEvidence, defaultName, 'Captura de cámara');
+        var defaultName = isEvidence ? 'evidencia_balanza_fueraservicio.jpg' : null;
+        runCapture(null, isEvidence, defaultName, isEvidence ? 'Foto de evidencia' : null);
       });
       $('#btn-upload', captureZone).addEventListener('click', function () { $('#file-input', captureZone).click(); });
       $('#file-input', captureZone).addEventListener('change', function (e) {
@@ -186,32 +187,34 @@
     function runCapture(photoDataUrl, isEvidence, fileName, subText) {
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       state.photo = true;
-      state.fileName = fileName || (isEvidence ? 'evidencia_balanza.jpg' : 'captura_display.jpg');
-      var metaSub = subText ? (esc(subText) + ' · Archivo adjunto') : 'Fotografía adjunta';
-
-      // En lugar de mostrar la previsualización fotográfica, mostramos la tarjeta con nombre del archivo y botón para quitarlo
-      captureZone.innerHTML =
-        '<div class="attached-file-box">' +
-        '<div class="attached-file-info">' +
-        '<div class="attached-file-icon' + (isEvidence ? ' is-evidence' : '') + '">' +
-        (isEvidence ? ICON.camera : ICON.fileImg) +
-        '</div>' +
-        '<div class="attached-file-meta">' +
-        '<div class="attached-file-name" title="' + esc(state.fileName) + '">' + esc(state.fileName) + '</div>' +
-        '<div class="attached-file-sub">' + metaSub + '</div>' +
-        '</div>' +
-        '</div>' +
-        '<button type="button" class="btn-remove-file" id="btn-remove-file" title="Quitar archivo adjunto">' +
-        ICON.trash + '<span>Quitar</span>' +
-        '</button>' +
-        '</div>';
-
-      $('#btn-remove-file', captureZone).addEventListener('click', function () {
-        renderCaptureUI(isEvidence);
-        toast('Archivo adjunto quitado.', 'info');
-      });
 
       if (isEvidence) {
+        // Balanza fuera de servicio: Foto como EVIDENCIA
+        // No se muestra la foto; se muestra la tarjeta de archivo con nombre y opción de quitar
+        state.fileName = fileName || 'evidencia_balanza_fueraservicio.jpg';
+        var metaSub = subText ? (esc(subText) + ' · Archivo adjunto') : 'Fotografía de auditoría';
+
+        captureZone.innerHTML =
+          '<div class="attached-file-box">' +
+          '<div class="attached-file-info">' +
+          '<div class="attached-file-icon is-evidence">' +
+          ICON.camera +
+          '</div>' +
+          '<div class="attached-file-meta">' +
+          '<div class="attached-file-name" title="' + esc(state.fileName) + '">' + esc(state.fileName) + '</div>' +
+          '<div class="attached-file-sub">' + metaSub + '</div>' +
+          '</div>' +
+          '</div>' +
+          '<button type="button" class="btn-remove-file" id="btn-remove-file" title="Quitar archivo adjunto">' +
+          ICON.trash + '<span>Quitar</span>' +
+          '</button>' +
+          '</div>';
+
+        $('#btn-remove-file', captureZone).addEventListener('click', function () {
+          renderCaptureUI(true);
+          toast('Archivo adjunto quitado.', 'info');
+        });
+
         resultZone.innerHTML =
           '<div class="evidence-box">' +
           '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy-900);font-size:13.5px;">' +
@@ -224,6 +227,45 @@
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Confirmar evidencia';
       } else {
+        // Balanza en servicio (desmarcada): Pesaje con OCR
+        if (photoDataUrl) {
+          // Si el usuario subió una imagen real desde su equipo, mostramos la tarjeta de archivo adjunto sin desplegar la imagen grande
+          state.fileName = fileName || 'captura_display.jpg';
+          var fileSub = subText ? (esc(subText) + ' · Archivo adjunto') : 'Fotografía del display';
+
+          captureZone.innerHTML =
+            '<div class="attached-file-box">' +
+            '<div class="attached-file-info">' +
+            '<div class="attached-file-icon">' +
+            ICON.fileImg +
+            '</div>' +
+            '<div class="attached-file-meta">' +
+            '<div class="attached-file-name" title="' + esc(state.fileName) + '">' + esc(state.fileName) + '</div>' +
+            '<div class="attached-file-sub">' + fileSub + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<button type="button" class="btn-remove-file" id="btn-remove-file" title="Quitar archivo adjunto">' +
+            ICON.trash + '<span>Quitar</span>' +
+            '</button>' +
+            '</div>';
+
+          $('#btn-remove-file', captureZone).addEventListener('click', function () {
+            renderCaptureUI(false);
+            toast('Archivo adjunto quitado.', 'info');
+          });
+        } else {
+          // Simulación de captura del display digital de la balanza
+          var simWeight = S.simulateWeight(cfg.kind);
+          state.simulatedWeight = simWeight;
+          state.fileName = null;
+
+          captureZone.innerHTML =
+            '<div class="display-frame has-photo" id="display-frame">' +
+            '<div style="color:#D8AC55;font-family:monospace;font-size:36px;letter-spacing:3px;font-weight:700;">' + simWeight + '</div>' +
+            '<div style="font-size:11px;color:#9ca3af;letter-spacing:1px;margin-top:4px;font-weight:500;">DISPLAY BALANZA · LECTURA DIGITAL</div>' +
+            '</div>';
+        }
+
         resultZone.innerHTML =
           '<div class="ocr-progress-box" id="ocr-progress-box">' +
           '<div class="ocr-progress-head">' +
@@ -264,7 +306,7 @@
     }
 
     function finishOcr() {
-      var val = S.simulateWeight(cfg.kind);
+      var val = state.simulatedWeight || S.simulateWeight(cfg.kind);
       state.ocrDone = true;
       state.ocrValue = val;
       resultZone.innerHTML +=
