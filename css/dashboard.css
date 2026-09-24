@@ -483,6 +483,84 @@ select.plain:focus, input.plain:focus, textarea.plain:focus{ border-color: var(-
 }
 .capture-actions{ display:flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
 
+/* Tarjeta de archivo adjunto (reemplaza previsualización fotográfica) */
+.attached-file-box{
+  background: var(--white);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all .2s ease;
+}
+.attached-file-info{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.attached-file-icon{
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #EFF6FF;
+  color: #2563EB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.attached-file-icon.is-evidence{
+  background: #FEF3C7;
+  color: #D97706;
+}
+.attached-file-meta{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.attached-file-name{
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--navy-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+.attached-file-sub{
+  font-size: 12px;
+  color: var(--gray-500);
+}
+.btn-remove-file{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #DC2626;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .15s ease;
+  flex-shrink: 0;
+}
+.btn-remove-file:hover{
+  background: #FEE2E2;
+  border-color: #F87171;
+  color: #B91C1C;
+}
+.btn-remove-file svg{
+  flex-shrink: 0;
+}
+
 .evidence-box{
   margin-top: 14px;
   background: #F4FAF6;
@@ -946,8 +1024,93 @@ select.plain:focus, input.plain:focus, textarea.plain:focus{ border-color: var(-
   color: #7b341e !important;
 }
 
+/* Acciones en la tabla de tablets: distribución uniforme en 2 slots fijos */
+.row-actions--tablets{
+  display: grid;
+  grid-template-columns: 154px 104px;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  width: 266px;
+  margin: 0 auto;
+}
+.row-actions--tablets .row-action-slot{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+}
+.row-actions--tablets .row-action-slot--empty{
+  color: var(--gray-400);
+  font-size: 15px;
+  user-select: none;
+}
+.row-actions--tablets .btn{
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 5px 8px;
+  text-align: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.row-actions--tablets .btn-subtle-clas{
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #526071;
+  background: #ffffff;
+  border: 1px solid #d4dce4;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-shadow: 0 1px 2px rgba(11,39,67,0.03);
+  transition: all .15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.row-actions--tablets .btn-subtle-clas svg{
+  width: 12px;
+  height: 12px;
+  color: #6c7c8f;
+  transition: color .15s ease;
+  flex: none;
+}
+.row-actions--tablets .btn-subtle-clas:hover:not(:disabled){
+  color: var(--navy-900);
+  background: #f1f5f9;
+  border-color: #a9bacb;
+  box-shadow: 0 2px 5px rgba(11,39,67,0.08);
+}
+.row-actions--tablets .btn-subtle-clas:hover:not(:disabled) svg{
+  color: var(--navy-900);
+}
+.row-actions--tablets .btn-subtle-clas:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #94a3b8;
+  box-shadow: none;
+  pointer-events: auto;
+}
+.row-actions--tablets .btn-subtle-clas:disabled svg{
+  color: #94a3b8;
+}
+
 .data-table th.th-actions{
   text-align: center;
+  min-width: 280px;
 }
 
 .toast.is-info{

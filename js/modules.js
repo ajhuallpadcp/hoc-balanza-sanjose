@@ -45,6 +45,18 @@
      DASHBOARD
      ======================================================================= */
   function renderDashboard(root) {
+    if (S.role === 'garita') {
+      var poolEnUso = S.tablets.filter(function (t) { return t.clas === 'pool' && (t.status === 'ocupado' || t.status === 'ocupada'); }).length;
+      var poolSinAsociar = S.tablets.filter(function (t) { return t.clas === 'pool' && t.status === 'sin_asociar'; }).length;
+
+      root.innerHTML =
+        '<div class="kpi-grid">' +
+        kpiCard('info', ICON.users, poolEnUso, 'Pool en uso', 'Tablets asignadas a estadías activas') +
+        kpiCard('warning', ICON.tablet, poolSinAsociar, 'Pool sin asociar', 'Tablets libres para asignación') +
+        '</div>';
+      return;
+    }
+
     var camionesPropios = S.tablets.filter(function (t) { return t.clas === 'fija'; }).length;
     var poolTerceros = S.tablets.filter(function (t) { return t.clas === 'pool'; }).length;
     var repuestos = S.tablets.filter(function (t) { return t.clas === 'repuesto'; }).length;
@@ -55,15 +67,17 @@
       kpiCard('info', ICON.truck, camionesPropios, 'Camión propio') +
       kpiCard('warning', ICON.users, poolTerceros, 'Pool de terceros') +
       kpiCard('success', ICON.tablet, repuestos, 'De repuesto') +
-      kpiCard('danger', ICON.warn, enMantenimiento, 'En mantenimiento') +
+      kpiCard('danger', ICON.warn, enMantenimiento, 'Mantenimiento') +
       '</div>';
   }
 
-  function kpiCard(tone, icon, value, label) {
+  function kpiCard(tone, icon, value, label, sub) {
     var bg = tone === 'warning' ? 'var(--warning-bg)' : tone === 'info' ? 'var(--info-bg)' : tone === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)';
     var fg = tone === 'warning' ? 'var(--warning-fg)' : tone === 'info' ? 'var(--info-fg)' : tone === 'success' ? 'var(--success-fg)' : 'var(--danger-fg)';
     return '<div class="kpi-card"><div class="kpi-card__top"><div class="kpi-card__icon" style="background:' + bg + ';color:' + fg + ';">' + icon + '</div></div>' +
-      '<div class="kpi-card__value">' + value + '</div><div class="kpi-card__label">' + esc(label) + '</div></div>';
+      '<div class="kpi-card__value">' + value + '</div><div class="kpi-card__label">' + esc(label) + '</div>' +
+      (sub ? '<div class="kpi-card__sub" style="font-size:12px;color:var(--gray-500);margin-top:-2px;">' + esc(sub) + '</div>' : '') +
+      '</div>';
   }
 
   /* =======================================================================
@@ -265,9 +279,9 @@
      ======================================================================= */
   var CLAS_LABEL = { fija: 'Camión propio', pool: 'Pool de terceros', repuesto: 'Repuesto' };
   var STATUS_BADGE = {
-    disponible: '<span class="badge badge-success">Disponible</span>',
     sin_asociar: '<span class="badge badge-warning">Sin asociar</span>',
-    ocupada: '<span class="badge badge-info">Ocupada</span>',
+    ocupado: '<span class="badge badge-info">Ocupado</span>',
+    ocupada: '<span class="badge badge-info">Ocupado</span>',
     danada: '<span class="badge badge-danger">En mantenimiento</span>',
     mantenimiento: '<span class="badge badge-danger">En mantenimiento</span>'
   };
@@ -284,28 +298,181 @@
 
   function renderTabletsTable() {
     var rows = S.tablets.map(function (t) {
-      var actions = '';
-      if (t.clas === 'fija' && !t.camion) {
-        actions = '<button class="btn btn-outline btn-sm js-assoc" data-id="' + t.id + '">Asociar camión</button>';
-      } else if (t.clas === 'fija' && t.camion) {
-        actions = '<button class="btn btn-table-danger btn-sm js-deassoc" data-id="' + t.id + '">Desasociar</button>';
-      } else if (t.clas === 'repuesto' && t.status === 'disponible') {
-        actions = '<button class="btn btn-outline btn-sm js-repuesto" data-id="' + t.id + '">Asignar como repuesto</button>';
-      } else if (t.clas === 'repuesto' && t.status === 'ocupada') {
-        actions = '<button class="btn btn-table-warning btn-sm js-liberar-repuesto" data-id="' + t.id + '">Liberar</button>';
+      var primaryAction = '';
+      if (t.camion) {
+        primaryAction = '<button class="btn btn-table-danger btn-sm js-deassoc" data-id="' + t.id + '">Desasociar</button>';
+      } else if (t.clas === 'fija' && !t.camion) {
+        primaryAction = '<button class="btn btn-outline btn-sm js-assoc" data-id="' + t.id + '">Asociar camión</button>';
+      } else if (t.clas === 'repuesto' && !t.camion) {
+        primaryAction = '<button class="btn btn-outline btn-sm js-repuesto" data-id="' + t.id + '">Asignar como repuesto</button>';
       }
+
+      var primarySlot = primaryAction
+        ? '<div class="row-action-slot">' + primaryAction + '</div>'
+        : '<div class="row-action-slot row-action-slot--empty"><span class="action-dash" title="Sin acción operativa asignada">—</span></div>';
+
+      var camionDisplay = t.camion;
+      if (!camionDisplay && t.clas === 'pool') {
+        var est = S.estadias.find(function (x) { return x.tabletId === t.id && x.estado === 'activa'; });
+        if (est) {
+          camionDisplay = est.placa;
+          t.camion = est.placa;
+        }
+      }
+
+      var canReclasificar = (t.status === 'sin_asociar' && !t.camion && !camionDisplay);
+      var reclasTitle = 'Cambiar clasificación';
+      var disabledAttr = '';
+      if (!canReclasificar) {
+        disabledAttr = ' disabled';
+        if (t.status === 'mantenimiento' || t.status === 'danada') {
+          reclasTitle = 'Debe reparar y desasociar la tablet antes de cambiar su clasificación';
+        } else {
+          reclasTitle = 'Debe desasociar la tablet antes de cambiar su clasificación';
+        }
+      }
+
+      var editBtn = '<div class="row-action-slot"><button class="btn btn-subtle-clas js-edit-clas" data-id="' + t.id + '"' + disabledAttr + ' title="' + esc(reclasTitle) + '">' +
+        ICON.edit + '<span>Reclasificar</span></button></div>';
+
       return '<tr>' +
         '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:12px;">' + esc(t.code || t.id) + '</span></td>' +
         '<td>' + esc(CLAS_LABEL[t.clas]) + '</td>' +
-        '<td class="text-center">' + (t.camion ? esc(t.camion) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td class="text-center">' + (camionDisplay ? esc(camionDisplay) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td class="text-center">' + (STATUS_BADGE[t.status] || t.status) + '</td>' +
         '<td class="text-center muted" style="color:var(--gray-500);">' + esc(t.since) + '</td>' +
-        '<td class="text-center"><div class="row-actions">' + actions + '</div></td>' +
+        '<td class="text-center"><div class="row-actions row-actions--tablets">' + primarySlot + editBtn + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
       '<th>Dispositivo</th><th>Clasificación</th><th class="text-center">Camión</th><th class="text-center">Estado</th><th class="text-center">Enrolada</th><th class="th-actions text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function openChangeClasModal(t) {
+    var clasOptions = [
+      { id: 'fija', label: 'Camión propio' },
+      { id: 'pool', label: 'Pool de terceros' },
+      { id: 'repuesto', label: 'Repuesto' }
+    ];
+    var optionsHtml = clasOptions.map(function (opt) {
+      return '<option value="' + opt.id + '"' + (opt.id === t.clas ? ' selected' : '') + '>' + opt.label + (opt.id === t.clas ? ' (actual)' : '') + '</option>';
+    }).join('');
+
+    var infoBanner =
+      '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:14px;">' +
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Clasificación actual</div>' +
+      '<div style="font-size:13.5px;font-weight:600;color:var(--navy-900);margin-top:2px;">' + esc(CLAS_LABEL[t.clas]) + '</div>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Estado operativo</div>' +
+      '<div style="margin-top:2px;">' + (STATUS_BADGE[t.status] || t.status) + '</div>' +
+      '</div>' +
+      '</div>';
+
+    var truckNotice = '';
+    if (t.camion) {
+      truckNotice =
+        '<div style="font-size:12.5px;color:var(--navy-800);background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">' +
+        ICON.truck +
+        '<span>Actualmente vinculada al camión propio <strong>' + esc(t.camion) + '</strong>.</span>' +
+        '</div>';
+    }
+
+    var busyNotice = '';
+    if (t.status === 'ocupada' || t.status === 'ocupado') {
+      busyNotice =
+        '<div class="pin-warning-box" style="margin-bottom:14px;">' +
+        ICON.warn +
+        '<div><strong>Dispositivo en uso</strong><p>Esta tablet se encuentra actualmente ocupada en una operación activa. Al cambiar su clasificación, se desvinculará de su asignación actual.</p></div>' +
+        '</div>';
+    }
+
+    var html =
+      infoBanner +
+      truckNotice +
+      busyNotice +
+      '<div class="form-grid" style="grid-template-columns:1fr;">' +
+      '<div>' +
+      '<label class="form-label" for="f-new-clas">Nueva clasificación</label>' +
+      '<select class="plain" id="f-new-clas">' + optionsHtml + '</select>' +
+      '</div>' +
+      '</div>' +
+      '<div id="clas-feedback-box" style="margin-top:12px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:12.5px;line-height:1.45;color:var(--gray-600);">' +
+      '</div>';
+
+    var overlay = confirmDialog({
+      title: 'Cambiar clasificación de tablet',
+      subtitle: t.id + ' · ' + (t.code || t.id),
+      body: html,
+      confirmLabel: 'Guardar cambios'
+    }, function () {
+      var selectEl = $('#f-new-clas', overlay);
+      if (!selectEl) return;
+      var newClas = selectEl.value;
+
+      if (newClas === t.clas) {
+        toast('La clasificación se mantiene como ' + CLAS_LABEL[t.clas] + '.', 'info');
+        return;
+      }
+
+      var oldClas = t.clas;
+      var prevCamion = t.camion;
+
+      // Desvincular camión si lo tenía asignado
+      if (t.camion) {
+        t.camion = null;
+      }
+
+      // Si era tablet del pool asignada a una estadía activa de Garita, desvincularla de la estadía
+      if (oldClas === 'pool') {
+        var activeEst = S.estadias.find(function (e) { return e.tabletId === t.id && e.estado === 'activa'; });
+        if (activeEst) activeEst.tabletId = null;
+      }
+
+      // Asignar nueva clasificación y estado correspondiente
+      t.clas = newClas;
+      t.status = 'sin_asociar';
+
+      // Registro en historial de tablets y actividad
+      var det = t.id + ' (' + (t.code || t.id) + ') reclasificada de ' + CLAS_LABEL[oldClas] + ' a ' + CLAS_LABEL[newClas];
+      if (prevCamion) {
+        det += ' · desasociada de ' + prevCamion;
+      }
+      if (S.tabletHistory) {
+        S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+      }
+      S.addActivity('Reclasificación tablet', det, 'ok');
+      S.enqueueSync('Reclasificación tablet', t.id);
+
+      toast('Tablet ' + t.id + ' reclasificada como ' + CLAS_LABEL[newClas] + '.', 'success');
+      Shell.refreshCurrent();
+    });
+
+    var selectEl = $('#f-new-clas', overlay);
+    var feedbackBox = $('#clas-feedback-box', overlay);
+    if (selectEl && feedbackBox) {
+      function updateFeedback() {
+        var val = selectEl.value;
+        if (val === t.clas) {
+          feedbackBox.innerHTML = '<span style="color:var(--gray-500);">Sin cambios: se conserva la clasificación actual (<strong>' + esc(CLAS_LABEL[t.clas]) + '</strong>).</span>';
+          return;
+        }
+        var msg = '';
+        var disassocWarning = t.camion ? '<br><span style="color:#b45309;font-weight:600;">⚠ Se desasociará automáticamente del camión ' + esc(t.camion) + '.</span>' : '';
+        if (val === 'fija') {
+          msg = '<strong style="color:var(--navy-900);">Camión propio:</strong> El dispositivo quedará configurado para operar fijo en un volquete de la compañía. Su estado pasará a <em>Sin asociar</em> hasta vincularlo a una patente.' + disassocWarning;
+        } else if (val === 'pool') {
+          msg = '<strong style="color:var(--navy-900);">Pool de terceros:</strong> El dispositivo se integrará al pool de Garita para asignarse temporalmente a transportistas terceros durante su estadía.' + disassocWarning;
+        } else if (val === 'repuesto') {
+          msg = '<strong style="color:var(--navy-900);">Repuesto:</strong> El dispositivo pasará a reserva de contingencia para sustituir tablets que entren en mantenimiento o falla operativa.' + disassocWarning;
+        }
+        feedbackBox.innerHTML = msg;
+      }
+      selectEl.addEventListener('change', updateFeedback);
+      updateFeedback();
+    }
   }
 
   function attachTabletsHandlers(root) {
@@ -333,7 +500,7 @@
           code: code,
           clas: clas,
           camion: null,
-          status: clas === 'fija' ? 'sin_asociar' : 'disponible',
+          status: 'sin_asociar',
           since: S.todayStr ? S.todayStr() : '23/09/2026'
         };
         S.tablets.push(t);
@@ -350,7 +517,8 @@
       var html = '<div class="form-grid">' + fieldSel('Patente', 'f-camion', optionList(libres)) + '</div>';
       confirmDialog({ title: 'Asociar tablet a camión', subtitle: id, body: html, confirmLabel: 'Asociar' }, function () {
         var t = S.tablets.find(function (x) { return x.id === id; });
-        t.camion = $('#f-camion').value; t.status = 'disponible';
+        t.camion = $('#f-camion').value;
+        t.status = 'ocupado';
         if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: id + ' asociada de forma fija a ' + t.camion, usuario: S.users.admin.name });
         toast('Asociación creada correctamente.', 'success');
         Shell.refreshCurrent();
@@ -360,44 +528,138 @@
     UI.on('.js-deassoc', 'click', function () {
       var id = this.getAttribute('data-id');
       var t = S.tablets.find(function (x) { return x.id === id; });
-      confirmDialog({ title: 'Desasociar tablet', subtitle: id + ' · ' + t.camion, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se eliminará la asociación fija vigente con este camión.</p>', danger: true, confirmLabel: 'Desasociar' }, function () {
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: id + ' desasociada de ' + t.camion, usuario: S.users.admin.name });
-        t.camion = null; t.status = 'sin_asociar';
-        toast('Tablet desasociada.', 'info');
+      if (!t) return;
+
+      var isMantenimiento = (t.status === 'mantenimiento' || t.status === 'danada');
+      var camion = t.camion || '';
+
+      var modalTitle = isMantenimiento ? 'Desasociar tablet en mantenimiento' : 'Desasociar tablet';
+      var modalSubtitle = id + (camion ? ' · ' + camion : '');
+
+      var modalBody = isMantenimiento
+        ? '<div style="display:flex;flex-direction:column;gap:12px;">' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px 14px;font-size:13px;color:#1e40af;line-height:1.45;">' +
+          'Al continuar, se confirmará que la tablet ya fue reparada y se encuentra operativa.' +
+          '</div>' +
+          '<p style="font-size:13.5px;color:var(--gray-700);margin:0;line-height:1.55;">' +
+          (camion
+            ? 'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.'
+            : 'La tablet <strong>' + esc(id) + '</strong> cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.') +
+          '</p>' +
+          '</div>'
+        : '<p style="font-size:13.5px;color:var(--gray-700);line-height:1.55;">' +
+          'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.' +
+          '</p>';
+
+      confirmDialog({
+        title: modalTitle,
+        subtitle: modalSubtitle,
+        body: modalBody,
+        danger: true,
+        confirmLabel: 'Desasociar'
+      }, function () {
+        var prevCamion = t.camion;
+        t.camion = null;
+        t.status = 'sin_asociar';
+
+        if (t.clas === 'pool') {
+          var est = S.estadias.find(function (e) { return e.tabletId === t.id && e.estado === 'activa'; });
+          if (est) est.tabletId = null;
+        }
+
+        var detalle = isMantenimiento
+          ? id + ' (' + (t.code || id) + ') reparada y desasociada de ' + prevCamion + ' · Estado: Sin asociar'
+          : id + ' (' + (t.code || id) + ') desasociada de ' + prevCamion + ' · Estado: Sin asociar';
+
+        if (S.tabletHistory) {
+          S.tabletHistory.unshift({ ts: S.nowStr(), detalle: detalle, usuario: S.users.admin.name });
+        }
+        S.addActivity('Tablet desasociada', detalle, 'ok');
+        S.enqueueSync('Desasociación tablet', id);
+
+        var toastMsg = isMantenimiento
+          ? 'Tablet ' + id + ' reparada y desasociada. Queda en estado Sin asociar.'
+          : 'Tablet ' + id + ' desasociada correctamente.';
+        toast(toastMsg, 'info');
         Shell.refreshCurrent();
       });
     }, root);
 
     UI.on('.js-repuesto', 'click', function () {
       var id = this.getAttribute('data-id');
-      var afectables = S.tablets.filter(function (x) { return x.clas === 'fija' && x.camion; }).map(function (x) { return x.camion; });
-      if (afectables.length === 0) { toast('No hay camiones con tablet fija para aplicar contingencia.', 'error'); return; }
+      var afectables = S.camionesPropios.filter(function (c) {
+        return S.tablets.some(function (t) {
+          return t.camion === c && (t.status === 'ocupado' || t.status === 'ocupada');
+        });
+      });
+      if (afectables.length === 0) {
+        toast('No hay camiones propios con tablet activa para aplicar contingencia.', 'error');
+        return;
+      }
       var html = '<div class="form-grid">' + fieldSel('Camión propio afectado', 'f-camion-rep', optionList(afectables)) + '</div>' +
-        '<p class="form-hint" style="margin-top:8px;">La tablet fija de ese camión quedará marcada como dañada mientras dure la contingencia.</p>';
-      confirmDialog({ title: 'Asignar tablet de repuesto', subtitle: id, body: html, confirmLabel: 'Asignar' }, function () {
-        var camion = $('#f-camion-rep').value;
-        var fija = S.tabletFor(camion);
-        fija.status = 'danada';
+        '<div id="repuesto-info-box" style="margin-top:10px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:12.5px;line-height:1.45;color:var(--gray-600);"></div>';
+
+      var overlay = confirmDialog({ title: 'Asignar tablet de repuesto', subtitle: id, body: html, confirmLabel: 'Asignar' }, function () {
+        var camion = $('#f-camion-rep', overlay).value;
+
+        // La tablet que actualmente está activa y operando para ese camión pasa a mantenimiento
+        var tabletActiva = S.tablets.find(function (x) {
+          return x.camion === camion && (x.status === 'ocupado' || x.status === 'ocupada');
+        });
+        if (tabletActiva) {
+          tabletActiva.status = 'mantenimiento';
+        }
+
         var rep = S.tablets.find(function (x) { return x.id === id; });
-        rep.status = 'ocupada'; rep.camion = camion;
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: id + ' asignada como repuesto a ' + camion + ' (contingencia)', usuario: S.users.admin.name });
-        toast('Tablet de repuesto asignada a ' + camion + '.', 'success');
+        rep.status = 'ocupado';
+        rep.camion = camion;
+
+        var det = id + ' asignada como repuesto a ' + camion + ' (contingencia)';
+        if (tabletActiva) {
+          det += ' · ' + tabletActiva.id + ' pasó a En mantenimiento';
+        }
+        if (S.tabletHistory) {
+          S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+        }
+        S.addActivity('Repuesto asignado', det, 'ok');
+        S.enqueueSync('Asignación repuesto', id);
+
+        toast('Tablet de repuesto ' + id + ' asignada a ' + camion + '.', 'success');
         Shell.refreshCurrent();
       });
+
+      var sel = $('#f-camion-rep', overlay);
+      var infoBox = $('#repuesto-info-box', overlay);
+      if (sel && infoBox) {
+        function updateRepInfo() {
+          var c = sel.value;
+          var act = S.tablets.find(function (x) { return x.camion === c && (x.status === 'ocupado' || x.status === 'ocupada'); });
+          var enMant = S.tablets.filter(function (x) { return x.camion === c && (x.status === 'mantenimiento' || x.status === 'danada'); });
+          var txt = '';
+          if (act) {
+            txt += '<span style="color:var(--navy-900);font-weight:600;">Tablet activa a sustituir:</span> ' + act.id + ' (' + (act.code || act.id) + ') · Pasará a <strong>En mantenimiento</strong>.';
+          }
+          if (enMant.length > 0) {
+            var ids = enMant.map(function (m) { return m.id; }).join(', ');
+            txt += '<br><span style="color:var(--gray-500);font-size:12px;">Historial del camión: ' + ids + ' ya en mantenimiento (se conservan para trazabilidad).</span>';
+          }
+          infoBox.innerHTML = txt;
+        }
+        sel.addEventListener('change', updateRepInfo);
+        updateRepInfo();
+      }
     }, root);
 
-    UI.on('.js-liberar-repuesto', 'click', function () {
+    UI.on('.js-edit-clas', 'click', function () {
+      if (this.disabled) return;
       var id = this.getAttribute('data-id');
-      var rep = S.tablets.find(function (x) { return x.id === id; });
-      var camion = rep.camion;
-      confirmDialog({ title: 'Liberar tablet de repuesto', subtitle: id + ' · ' + camion, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se restituirá la asociación operativa original del camión.</p>' }, function () {
-        var fija = S.tablets.find(function (x) { return x.clas === 'fija' && x.camion === camion; });
-        if (fija) fija.status = 'disponible';
-        rep.status = 'disponible'; rep.camion = null;
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: 'Contingencia finalizada en ' + camion + ' · ' + id + ' liberada al pool de repuesto', usuario: S.users.admin.name });
-        toast('Tablet de repuesto liberada.', 'success');
-        Shell.refreshCurrent();
-      });
+      var t = S.tablets.find(function (x) { return x.id === id; });
+      if (!t) return;
+      if (t.status !== 'sin_asociar' || t.camion) {
+        toast('Solo se puede reclasificar una tablet cuando está en estado Sin asociar.', 'error');
+        return;
+      }
+      openChangeClasModal(t);
     }, root);
   }
 
@@ -477,13 +739,14 @@
       var id = this.getAttribute('data-id');
       var e = S.estadias.find(function (x) { return x.id === id; });
       var libres = S.poolAvailable();
-      if (libres.length === 0) { toast('No hay tablets disponibles en el pool de terceros.', 'error'); return; }
-      var html = '<div class="form-grid">' + fieldSel('Tablet disponible', 'f-tablet', optionList(libres.map(function (t) { return t.code || t.id; }))) + '</div>' +
-        '<p class="form-hint" style="margin-top:8px;">Solo se listan tablets clasificadas como pool de terceros y disponibles.</p>';
+      if (libres.length === 0) { toast('No hay tablets sin asociar en el pool de terceros.', 'error'); return; }
+      var html = '<div class="form-grid">' + fieldSel('Tablet del pool', 'f-tablet', optionList(libres.map(function (t) { return t.code || t.id; }))) + '</div>' +
+        '<p class="form-hint" style="margin-top:8px;">Solo se listan tablets clasificadas como pool de terceros y en estado Sin asociar.</p>';
       confirmDialog({ title: 'Asignar tablet temporal', subtitle: e ? e.placa : '', body: html, confirmLabel: 'Asignar' }, function () {
         var code = $('#f-tablet').value;
         var tablet = S.tablets.find(function (t) { return t.code === code || t.id === code; });
-        tablet.status = 'ocupada';
+        tablet.status = 'ocupado';
+        tablet.camion = e.placa;
         e.tabletId = tablet.id;
         if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet.code || tablet.id) + ' asignada temporalmente a patente ' + e.placa + ' (' + e.id + ')', usuario: S.users.garita.name });
         S.addActivity('Tablet asignada', (tablet.code || tablet.id) + ' → ' + e.placa, 'ok');
@@ -500,14 +763,17 @@
         toast('No se puede cerrar: el viaje ' + incompleto.id + ' está incompleto.', 'error');
         return;
       }
-      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada volverá automáticamente al pool.</p>' }, function () {
+      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
         e.estado = 'cerrada'; e.salidaEn = S.nowStr();
         var tablet = S.tablets.find(function (t) { return t.id === e.tabletId; });
-        if (tablet) { tablet.status = 'disponible'; }
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet ? tablet.id : '') + ' liberada automáticamente al cerrar ' + e.id, usuario: 'Sistema' });
+        if (tablet) {
+          tablet.status = 'sin_asociar';
+          tablet.camion = null;
+        }
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet ? tablet.id : '') + ' desasociada automáticamente al cerrar ' + e.id, usuario: 'Sistema' });
         S.enqueueSync('Salida de tercero', e.placa);
         S.addActivity('Salida registrada', e.placa + ' · estadía cerrada', 'ok');
-        toast('Salida registrada. Tablet liberada al pool.', 'success');
+        toast('Salida registrada. Tablet desasociada y devuelta al pool.', 'success');
         Shell.refreshCurrent();
       });
     }, root);

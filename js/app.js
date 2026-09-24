@@ -72,7 +72,6 @@
     var togglePass = document.getElementById("toggle-pass");
     var iconEye = document.getElementById("icon-eye");
     var submitButton = document.getElementById("btn-submit");
-    var forgotButton = document.getElementById("btn-forgot");
 
     var eyeOpen = '<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/>';
     var eyeClosed = '<path d="M3 3l18 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M10.6 5.2A10.6 10.6 0 0 1 12 5c7 0 10.5 7 10.5 7a13.4 13.4 0 0 1-3.1 4.1M7.4 6.9C4.2 8.7 1.5 12 1.5 12S5 19 12 19c1.3 0 2.5-.2 3.6-.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>';
@@ -93,10 +92,6 @@
 
     userInput.addEventListener("input", function () { shellUser.classList.remove("has-error"); });
     passInput.addEventListener("input", function () { shellPass.classList.remove("has-error"); });
-
-    forgotButton.addEventListener("click", function () {
-      App.showToast("Contacta al administrador del sistema para restablecer tu contraseña.");
-    });
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();

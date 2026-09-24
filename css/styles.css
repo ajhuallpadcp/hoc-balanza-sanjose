@@ -210,6 +210,10 @@ img { display: block; max-width: 100%; }
   font-size: 15px;
 }
 .field-shell input::placeholder { color: #7b8798; opacity: 1; }
+.field-shell input::-ms-reveal,
+.field-shell input::-ms-clear {
+  display: none;
+}
 .field-toggle {
   align-self: stretch;
   border: 0;

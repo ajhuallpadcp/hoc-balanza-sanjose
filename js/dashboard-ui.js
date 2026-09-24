@@ -40,8 +40,18 @@
     swap: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h13l-3-3M20 16H7l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     eye: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.6" stroke="currentColor" stroke-width="1.6"/></svg>',
     lock: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="5" y="10.5" width="14" height="9.5" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10.5V7.8a4 4 0 1 1 8 0v2.7" stroke="currentColor" stroke-width="1.7"/></svg>',
-    userIco: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z" stroke="currentColor" stroke-width="1.7"/><path d="M4 20c1.4-3.6 4.6-5.5 8-5.5s6.6 1.9 8 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
+    userIco: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z" stroke="currentColor" stroke-width="1.7"/><path d="M4 20c1.4-3.6 4.6-5.5 8-5.5s6.6 1.9 8 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    fileImg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="8.5" r="1.8" stroke="currentColor" stroke-width="1.8"/><path d="M21 16l-5-5-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    edit: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
+
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
 
   /* ---------------------------------------------------------------------
      Toasts
@@ -98,7 +108,7 @@
      Modal de pesaje / captura OCR (RF041–RF055)
      --------------------------------------------------------------------- */
   function openWeighModal(cfg, onConfirm) {
-    var state = { photo: false, ocrDone: false, ocrValue: null, outOfService: false, timer: null };
+    var state = { photo: false, ocrDone: false, ocrValue: null, outOfService: false, timer: null, fileName: null };
 
     var html =
       '<div class="modal__head"><div><h3>' + esc(cfg.title) + '</h3>' +
@@ -132,6 +142,7 @@
       state.photo = false;
       state.ocrDone = false;
       state.ocrValue = null;
+      state.fileName = null;
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       resultZone.innerHTML = '';
       confirmBtn.disabled = true;
@@ -155,31 +166,52 @@
         '</div>' +
         '</div>';
 
-      $('#btn-simulate', captureZone).addEventListener('click', function () { runCapture(null, isEvidence); });
+      $('#btn-simulate', captureZone).addEventListener('click', function () {
+        var defaultName = isEvidence ? 'evidencia_balanza_fueraservicio.jpg' : 'captura_display_balanza.jpg';
+        runCapture(null, isEvidence, defaultName, 'Captura de cámara');
+      });
       $('#btn-upload', captureZone).addEventListener('click', function () { $('#file-input', captureZone).click(); });
       $('#file-input', captureZone).addEventListener('change', function (e) {
         var file = e.target.files[0];
         if (!file) return;
+        var sizeStr = formatFileSize(file.size);
         var reader = new FileReader();
-        reader.onload = function (ev) { runCapture(ev.target.result, isEvidence); };
+        reader.onload = function (ev) {
+          runCapture(ev.target.result, isEvidence, file.name, sizeStr);
+        };
         reader.readAsDataURL(file);
       });
     }
 
-    function runCapture(photoDataUrl, isEvidence) {
+    function runCapture(photoDataUrl, isEvidence, fileName, subText) {
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       state.photo = true;
-      var frame = $('#display-frame', captureZone);
-      frame.classList.add('has-photo');
+      state.fileName = fileName || (isEvidence ? 'evidencia_balanza.jpg' : 'captura_display.jpg');
+      var metaSub = subText ? (esc(subText) + ' · Archivo adjunto') : 'Fotografía adjunta';
+
+      // En lugar de mostrar la previsualización fotográfica, mostramos la tarjeta con nombre del archivo y botón para quitarlo
+      captureZone.innerHTML =
+        '<div class="attached-file-box">' +
+        '<div class="attached-file-info">' +
+        '<div class="attached-file-icon' + (isEvidence ? ' is-evidence' : '') + '">' +
+        (isEvidence ? ICON.camera : ICON.fileImg) +
+        '</div>' +
+        '<div class="attached-file-meta">' +
+        '<div class="attached-file-name" title="' + esc(state.fileName) + '">' + esc(state.fileName) + '</div>' +
+        '<div class="attached-file-sub">' + metaSub + '</div>' +
+        '</div>' +
+        '</div>' +
+        '<button type="button" class="btn-remove-file" id="btn-remove-file" title="Quitar archivo adjunto">' +
+        ICON.trash + '<span>Quitar</span>' +
+        '</button>' +
+        '</div>';
+
+      $('#btn-remove-file', captureZone).addEventListener('click', function () {
+        renderCaptureUI(isEvidence);
+        toast('Archivo adjunto quitado.', 'info');
+      });
 
       if (isEvidence) {
-        frame.innerHTML = photoDataUrl
-          ? '<img src="' + photoDataUrl + '" alt="Fotografía de evidencia">'
-          : '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;">' +
-            '<div style="color:#f87171;font-family:monospace;font-size:24px;letter-spacing:2px;font-weight:700;">[ OFFLINE / SIN SEÑAL ]</div>' +
-            '<div style="font-size:12px;color:#9ca3af;letter-spacing:0.5px;font-weight:500;">BALANZA FUERA DE SERVICIO · EVIDENCIA REGISTRADA</div>' +
-            '</div>';
-
         resultZone.innerHTML =
           '<div class="evidence-box">' +
           '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy-900);font-size:13.5px;">' +
@@ -192,10 +224,6 @@
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Confirmar evidencia';
       } else {
-        frame.innerHTML = photoDataUrl
-          ? '<img src="' + photoDataUrl + '" alt="Fotografia capturada del display">'
-          : '<div style="color:#D8AC55;font-family:monospace;font-size:34px;letter-spacing:3px;">' + S.simulateWeight(cfg.kind) + '</div>';
-
         resultZone.innerHTML =
           '<div class="ocr-progress-box" id="ocr-progress-box">' +
           '<div class="ocr-progress-head">' +
@@ -290,7 +318,8 @@
         manual: manual,
         estimated: false,
         outOfService: isOOS,
-        hasPhoto: state.photo
+        hasPhoto: state.photo,
+        fileName: state.fileName
       });
     });
   }

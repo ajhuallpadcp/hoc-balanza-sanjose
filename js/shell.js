@@ -85,7 +85,11 @@
     var t = TITLES[screenId];
     if (t) {
       $('#topbar-title').textContent = t[0];
-      $('#topbar-subtitle').textContent = t[1];
+      var sub = t[1];
+      if (screenId === 'dashboard' && S.role === 'garita') {
+        sub = 'Disponibilidad y asignación del pool de tablets';
+      }
+      $('#topbar-subtitle').textContent = sub;
     }
     renderSidebar();
     var fn = RENDERERS[screenId];
