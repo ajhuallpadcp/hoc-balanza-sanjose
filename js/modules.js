@@ -148,6 +148,7 @@
         '<td>' + esc(k.tipoMaterial) + '</td>' +
         '<td>' + esc(k.destino) + '</td>' +
         '<td class="num">' + weighSummary(k.pesajeCargado) + '</td>' +
+        '<td class="num">' + (k.neto != null ? k.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td>' + (k.descarga ? esc(k.descarga) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td class="text-center">' + (k.estado === 'Abierto' ? '<span class="badge badge-info">Abierto</span>' : '<span class="badge badge-success">Cerrado</span>') + '</td>' +
         '<td class="text-center">' + syncBadge(syncStatusFor(k.id)) + '</td>' +
@@ -155,7 +156,7 @@
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Ticket</th><th>Tolva</th><th>Material</th><th>Destino</th><th>Pesaje cargado</th><th>Descarga</th><th class="text-center">Estado</th><th class="text-center">Sync</th><th class="th-actions text-center">Acciones</th>' +
+      '<th>Ticket</th><th>Tolva</th><th>Material</th><th>Destino</th><th>Pesaje cargado</th><th>Neto</th><th>Descarga</th><th class="text-center">Estado</th><th class="text-center">Sync</th><th class="th-actions text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -209,6 +210,8 @@
         res.ts = S.nowStr();
         var k = S.tickets.find(function (x) { return x.id === id; });
         k.pesajeCargado = res;
+        var tara = S.turno.tara;
+        k.neto = (res.outOfService || res.value == null || !tara || tara.value == null) ? null : Math.max(0, res.value - tara.value);
         S.enqueueSync('Pesaje cargado', id);
         var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + res.value.toLocaleString('es-PE') + ' kg' : '');
         S.addActivity('Pesaje cargado', 'Ticket ' + id + actDet, 'ok');
@@ -264,7 +267,7 @@
         tolva: $('#f-tolva').value, labor: $('#f-labor').value, nivel: $('#f-nivel').value,
         equipoScoop: $('#f-scoop').value, operadorScoop: $('#f-opscoop').value,
         tipoMaterial: $('#f-material').value, puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
-        estado: 'Abierto', pesajeCargado: null, descarga: null
+        estado: 'Abierto', pesajeCargado: null, descarga: null, neto: null
       };
       S.tickets.unshift(k);
       S.enqueueSync('Ticket de extracción', k.id);
@@ -512,12 +515,13 @@
 
     UI.on('.js-assoc', 'click', function () {
       var id = this.getAttribute('data-id');
-      var libres = S.camionesPropios.filter(function (c) { return !S.tabletFor(c); });
-      if (libres.length === 0) { toast('Todos los camiones propios ya cuentan con una tablet fija asociada.', 'error'); return; }
-      var html = '<div class="form-grid">' + fieldSel('Patente', 'f-camion', optionList(libres)) + '</div>';
+      var html = '<div class="form-grid">' + fieldTxt('Patente', 'f-camion', 'Ej. V-108') + '</div>';
       confirmDialog({ title: 'Asociar tablet a camión', subtitle: id, body: html, confirmLabel: 'Asociar' }, function () {
+        var placa = ($('#f-camion').value || '').trim().toUpperCase();
+        if (!placa) { toast('Ingresa la patente del camión.', 'error'); return; }
+        if (S.tabletFor(placa)) { toast('La patente ' + placa + ' ya cuenta con una tablet fija asociada.', 'error'); return; }
         var t = S.tablets.find(function (x) { return x.id === id; });
-        t.camion = $('#f-camion').value;
+        t.camion = placa;
         t.status = 'ocupado';
         if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: id + ' asociada de forma fija a ' + t.camion, usuario: S.users.admin.name });
         toast('Asociación creada correctamente.', 'success');
@@ -681,7 +685,6 @@
       return '<div class="empty-state">' + ICON.empty + '<p>No hay vehículos de terceros registrados todavía.</p></div>';
     }
     var rows = activas.map(function (e) {
-      var cerrados = e.viajes.filter(function (v) { return v.estado === 'Cerrado'; }).length;
       var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
       var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.code || tablet.id) + '</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>';
       var salidaBtn = e.estado === 'activa'
@@ -694,14 +697,15 @@
         '<td>' + esc(e.conductor) + '</td>' +
         '<td>' + esc(e.documento || '—') + '</td>' +
         '<td class="text-center">' + tabletCell + '</td>' +
-        '<td class="text-center">' + e.viajes.length + ' (' + cerrados + ' cerrados)</td>' +
+        '<td class="text-center">' + e.viajes.length + '</td>' +
         '<td class="text-center">' + (e.estado === 'activa' ? '<span class="badge badge-info">Activa</span>' : '<span class="badge badge-success">Cerrada</span>') + '</td>' +
         '<td class="text-center muted" style="color:var(--gray-500);">' + esc(e.ingresoEn) + '</td>' +
+        '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle de la estadía">' + ICON.eye + '</button></div></td>' +
         '<td class="text-center"><div class="row-actions">' + pinBtn + salidaBtn + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="th-actions text-center">Acciones</th>' +
+      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="text-center">Detalle</th><th class="th-actions text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -712,6 +716,7 @@
         fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros)) +
         fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros)) +
         fieldTxt('Patente', 'f-placa', 'Ej. ABC-123') +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456') +
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor') +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento') +
         fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector)) +
@@ -721,7 +726,8 @@
         var pin = String(Math.floor(1000 + Math.random() * 9000));
         var e = {
           id: S.genEstadiaId(), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
-          placa: placa, conductor: $('#f-conductor').value || 'Sin registrar',
+          placa: placa, placaSecundaria: ($('#f-placa-sec').value || '').trim().toUpperCase(),
+          conductor: $('#f-conductor').value || 'Sin registrar',
           documento: $('#f-documento').value || '—',
           pin: pin,
           destino: $('#f-destino').value,
@@ -776,6 +782,34 @@
         toast('Salida registrada. Tablet desasociada y devuelta al pool.', 'success');
         Shell.refreshCurrent();
       });
+    }, root);
+
+    UI.on('.js-estadia-view', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+      var cerrados = e.viajes.filter(function (v) { return v.estado === 'Cerrado'; }).length;
+      var fields = [
+        ['Estadía', e.id],
+        ['Patente', e.placa],
+        ['Patente secundaria', e.placaSecundaria || '—'],
+        ['Empresa', e.empresa],
+        ['Tipo de carga / material', e.tipoCarga || '—'],
+        ['Conductor', e.conductor],
+        ['Documento', e.documento || '—'],
+        ['Destino / sector', e.destino || '—'],
+        ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
+        ['Ingreso', e.ingresoEn || '—'],
+        ['Salida', e.salidaEn || '—'],
+        ['Estado', e.estado === 'activa' ? 'Activa' : 'Cerrada'],
+        ['Nro. viajes', e.viajes.length + ' (' + cerrados + ' cerrados)']
+      ];
+      var body = fields.map(function (f) {
+        return '<div class="info-row"><span class="label">' + f[0] + '</span><span class="value">' + esc(f[1]) + '</span></div>';
+      }).join('');
+      confirmDialog({ title: 'Detalle de la estadía', subtitle: 'Patente ' + e.placa, body: body, confirmLabel: 'Cerrar' }, function () { });
+      $('.js-modal-cancel').style.display = 'none';
     }, root);
 
     UI.on('.js-show-pin', 'click', function () {
@@ -841,7 +875,7 @@
 
     root.innerHTML =
       '<div class="grid-2">' +
-      '<div class="card"><div class="card__head"><div><h3>Detalles del conductor</h3><p>Resuelto automáticamente desde la tablet</p></div></div>' +
+      '<div class="card"><div class="card__head"><div><h3>Detalles del conductor</h3></div></div>' +
       '<div class="card__body">' +
       '<div class="info-row"><span class="label">Empresa</span><span class="value">' + esc(estadia.empresa) + '</span></div>' +
       '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(estadia.placa) + '</span></div>' +
@@ -851,7 +885,7 @@
       '<div class="info-row"><span class="label">Destino / sector</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
       '</div></div>' +
 
-      '<div class="card"><div class="card__head"><div><h3>Viaje en curso</h3><p>Pesaje cargado → descarga → pesaje vacío</p></div></div>' +
+      '<div class="card"><div class="card__head"><div><h3>Viaje en curso</h3><p>Pesaje de entrada → descarga / carga → pesaje de salida</p></div></div>' +
       '<div class="card__body">' + renderViajeActivo(estadia, viajeActivo) + '</div></div>' +
       '</div>' +
 
@@ -861,21 +895,40 @@
     attachTercerosHandlers(root, estadia);
   }
 
+  // Sentido del viaje: v.sentido indica cómo ingresa el vehículo ('cargado' | 'vacio').
+  // El pesaje de salida siempre es el estado contrario al de entrada.
+  var ESTADO_PESAJE = { cargado: 'Cargado', vacio: 'Vacío' };
+  function estadoSalida(sentido) { return sentido === 'cargado' ? 'vacio' : 'cargado'; }
+  function pesajeConEstado(w, estado) {
+    if (!w || !estado) return weighSummary(w);
+    return weighSummary(w) + ' <span class="badge ' + (estado === 'cargado' ? 'badge-gold' : 'badge-neutral') + '" style="margin-left:4px;">' + ESTADO_PESAJE[estado] + '</span>';
+  }
+
   function renderViajeActivo(estadia, v) {
     if (!v) {
       return '<p style="font-size:13px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
         '<button class="btn btn-primary btn-block" id="btn-start-trip">Iniciar viaje</button>';
     }
-    var step = !v.cargado ? 'cargado' : !v.descarga ? 'descarga' : !v.vacio ? 'vacio' : 'listo';
+    var entradaEst = v.sentido || null;
+    var salidaEst = entradaEst ? estadoSalida(entradaEst) : null;
+    var entrada = entradaEst ? v[entradaEst] : null;
+    var salida = salidaEst ? v[salidaEst] : null;
+    var intermedioLabel = entradaEst === 'vacio' ? 'Carga' : 'Descarga';
+    var step = !entrada ? 'entrada' : !salida ? 'salida' : 'listo';
     var rows =
       '<div class="info-row"><span class="label">Viaje</span><span class="value">' + v.id + '</span></div>' +
-      '<div class="info-row"><span class="label">Pesaje cargado</span><span class="value">' + weighSummary(v.cargado) + '</span></div>' +
-      '<div class="info-row"><span class="label">Descarga</span><span class="value">' + (v.descarga ? esc(v.descarga) : '—') + '</span></div>' +
-      '<div class="info-row"><span class="label">Pesaje vacío</span><span class="value">' + weighSummary(v.vacio) + '</span></div>';
+      '<div class="info-row"><span class="label">Pesaje de entrada</span><span class="value">' + pesajeConEstado(entrada, entradaEst) + '</span></div>' +
+      '<div class="info-row"><span class="label">' + (entradaEst ? intermedioLabel : 'Descarga / Carga') + '</span><span class="value">' + (v.intermedio ? esc(v.intermedio) : '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Pesaje de salida</span><span class="value">' + pesajeConEstado(salida, salidaEst) + '</span></div>';
     var btn = '';
-    if (step === 'cargado') btn = '<button class="btn btn-gold btn-block" id="btn-trip-cargado">Registrar pesaje cargado</button>';
-    else if (step === 'descarga') btn = '<button class="btn btn-outline btn-block" id="btn-trip-descarga">Registrar descarga</button>';
-    else if (step === 'vacio') btn = '<button class="btn btn-gold btn-block" id="btn-trip-vacio">Registrar pesaje vacío</button>';
+    if (step === 'entrada') {
+      btn = '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;">¿Cómo ingresa el vehículo a la balanza?</p>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+        '<button class="btn btn-gold btn-block js-trip-entrada" data-estado="cargado">Entrada cargado</button>' +
+        '<button class="btn btn-outline btn-block js-trip-entrada" data-estado="vacio">Entrada vacío (tara)</button>' +
+        '</div>';
+    }
+    else if (step === 'salida') btn = '<button class="btn btn-gold btn-block" id="btn-trip-salida">Registrar pesaje de salida (' + ESTADO_PESAJE[salidaEst].toLowerCase() + ')</button>';
     else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:15px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
     return rows + '<div style="margin-top:12px;">' + btn + '</div>';
   }
@@ -885,61 +938,66 @@
       return '<div class="empty-state">' + ICON.empty + '<p>Aún no se han registrado viajes en esta estadía.</p></div>';
     }
     var rows = estadia.viajes.map(function (v) {
+      var entradaEst = v.sentido || null;
+      var salidaEst = entradaEst ? estadoSalida(entradaEst) : null;
       return '<tr><td><strong>' + v.id + '</strong></td>' +
-        '<td>' + weighSummary(v.cargado) + '</td>' +
-        '<td>' + weighSummary(v.vacio) + '</td>' +
+        '<td>' + pesajeConEstado(entradaEst ? v[entradaEst] : null, entradaEst) + '</td>' +
+        '<td>' + pesajeConEstado(salidaEst ? v[salidaEst] : null, salidaEst) + '</td>' +
         '<td class="num">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td>' + (v.estado === 'Cerrado' ? '<span class="badge badge-success">Cerrado</span>' : '<span class="badge badge-info">En curso</span>') + '</td>' +
         '<td>' + syncBadge(syncStatusFor(v.id)) + '</td></tr>';
     }).join('');
-    return '<div class="table-wrap"><table class="data-table"><thead><tr><th>Viaje</th><th>Cargado</th><th>Vacío</th><th>Neto</th><th>Estado</th><th>Sync</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    return '<div class="table-wrap"><table class="data-table"><thead><tr><th>Viaje</th><th>Entrada</th><th>Salida</th><th>Neto</th><th>Estado</th><th>Sync</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   function attachTercerosHandlers(root, estadia) {
+    function viajeEnCurso() { return estadia.viajes.find(function (x) { return x.estado !== 'Cerrado'; }); }
+
     var btnStart = $('#btn-start-trip', root);
     if (btnStart) btnStart.addEventListener('click', function () {
-      var v = { id: S.genViajeId(), estado: 'en_curso', cargado: null, descarga: null, vacio: null, neto: null };
+      var v = { id: S.genViajeId(), estado: 'en_curso', sentido: null, cargado: null, intermedio: null, vacio: null, neto: null };
       estadia.viajes.unshift(v);
       S.addActivity('Viaje iniciado', v.id + ' · ' + estadia.placa, 'ok');
       toast('Viaje ' + v.id + ' iniciado dentro de la estadía.', 'success');
       Shell.refreshCurrent();
     });
-    var btnCargado = $('#btn-trip-cargado', root);
-    if (btnCargado) btnCargado.addEventListener('click', function () {
-      var v = estadia.viajes.find(function (x) { return x.estado !== 'Cerrado'; });
-      openWeighModal({ title: 'Pesaje cargado', subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: 'cargado', allowOutOfService: true, hideEstimatedValue: false }, function (res) {
+
+    UI.on('.js-trip-entrada', 'click', function () {
+      var estado = this.getAttribute('data-estado');
+      var v = viajeEnCurso();
+      openWeighModal({ title: 'Pesaje de entrada · ' + ESTADO_PESAJE[estado], subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: estado, allowOutOfService: true, hideEstimatedValue: false }, function (res) {
         res.ts = S.nowStr();
-        v.cargado = res;
-        S.enqueueSync('Pesaje cargado tercero', v.id);
-        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje cargado registrado.', 'success');
+        v.sentido = estado;
+        v[estado] = res;
+        S.enqueueSync('Pesaje de entrada tercero', v.id);
+        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje de entrada (' + ESTADO_PESAJE[estado].toLowerCase() + ') registrado.', 'success');
         Shell.refreshCurrent();
       });
-    });
-    var btnDescarga = $('#btn-trip-descarga', root);
-    if (btnDescarga) btnDescarga.addEventListener('click', function () {
-      var v = estadia.viajes.find(function (x) { return x.estado !== 'Cerrado'; });
-      confirmDialog({ title: 'Registrar descarga', subtitle: 'Viaje ' + v.id, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se habilitará el registro del pesaje vacío.</p>' }, function () {
-        v.descarga = S.nowStr();
-        toast('Descarga registrada.', 'success');
-        Shell.refreshCurrent();
-      });
-    });
-    var btnVacio = $('#btn-trip-vacio', root);
-    if (btnVacio) btnVacio.addEventListener('click', function () {
-      var v = estadia.viajes.find(function (x) { return x.estado !== 'Cerrado'; });
-      openWeighModal({ title: 'Pesaje vacío', subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: 'vacio', allowOutOfService: true, hideEstimatedValue: false }, function (res) {
+    }, root);
+
+    var btnSalida = $('#btn-trip-salida', root);
+    if (btnSalida) btnSalida.addEventListener('click', function () {
+      var v = viajeEnCurso();
+      var salidaEst = estadoSalida(v.sentido);
+      openWeighModal({ title: 'Pesaje de salida · ' + ESTADO_PESAJE[salidaEst], subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: salidaEst, allowOutOfService: true, hideEstimatedValue: false }, function (res) {
         res.ts = S.nowStr();
-        v.vacio = res;
-        if ((v.cargado && v.cargado.outOfService) || res.outOfService) {
+        v[salidaEst] = res;
+        v.intermedio = res.ts; // descarga / carga se registra automáticamente con el pesaje de salida
+        var inconsistente = false;
+        if ((v.cargado && v.cargado.outOfService) || (v.vacio && v.vacio.outOfService)) {
           v.neto = null;
         } else {
-          v.neto = Math.max(0, (v.cargado ? v.cargado.value || 0 : 0) - (v.vacio.value || 0));
+          var bruto = v.cargado ? v.cargado.value || 0 : 0;
+          var tara = v.vacio ? v.vacio.value || 0 : 0;
+          inconsistente = bruto <= tara;
+          v.neto = Math.max(0, bruto - tara);
         }
         v.estado = 'Cerrado';
         S.enqueueSync('Viaje tercero', v.id);
         var actDet = v.neto != null ? ' · peso neto ' + v.neto.toLocaleString('es-PE') + ' kg' : ' · balanza fuera de servicio (evidencia)';
         S.addActivity('Viaje cerrado', v.id + actDet, 'ok');
         toast('Viaje cerrado.' + (v.neto != null ? ' Peso neto: ' + v.neto.toLocaleString('es-PE') + ' kg.' : ' Registrado con evidencia de balanza fuera de servicio.'), 'success');
+        if (inconsistente) toast('Atención: el peso cargado es menor o igual al peso vacío. Verifica los pesajes.', 'error');
         Shell.refreshCurrent();
       });
     });
