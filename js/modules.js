@@ -289,18 +289,278 @@
     mantenimiento: '<span class="badge badge-danger">En mantenimiento</span>'
   };
 
+  var tabletFilters = { estado: '', desde: '', hasta: '' };
+
+  // dd/mm/yyyy -> yyyy-mm-dd (comparable con los inputs de fecha)
+  function tabletDateIso(s) {
+    var p = (s || '').split('/');
+    return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : '';
+  }
+
+  /* -----------------------------------------------------------------------
+     Barra de filtros compartida (estado + rango de fechas) y paginación.
+     Se usa en Administración de Tablets y en Garita.
+     ----------------------------------------------------------------------- */
+  // Estado del calendario de rango (borrador hasta pulsar "Aplicar rango")
+  var filterCal = { draftFrom: '', draftTo: '', month: new Date().getMonth(), year: new Date().getFullYear() };
+  var MONTHS_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  function isoLocal(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  // yyyy-mm-dd -> dd/mm/yyyy
+  function isoToDisplay(s) {
+    var p = (s || '').split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+  }
+  function isoInRange(d, f) {
+    if (f.desde && d < f.desde) return false;
+    if (f.hasta && d > f.hasta) return false;
+    return true;
+  }
+
+  // opts: { title, subtitle, ctaId, ctaLabel, segments:[{id,label,dot,count}], filters, dateLabel, results }
+  function renderFilterToolbar(opts) {
+    var f = opts.filters;
+    var segments = opts.segments.map(function (s) {
+      var sel = s.id === f.estado;
+      return '<button type="button" class="flt-segment' + (sel ? ' is-selected' : '') + '" data-estado="' + s.id + '" aria-pressed="' + sel + '">' +
+        (s.dot ? '<span class="flt-dot flt-dot--' + s.dot + '"></span>' : '') +
+        esc(s.label) + ' <span class="flt-count">' + s.count + '</span></button>';
+    }).join('');
+    var hasRange = !!(f.desde || f.hasta);
+    var rangeLabel = hasRange ? (f.desde ? isoToDisplay(f.desde) : 'Inicio') + ' – ' + (f.hasta ? isoToDisplay(f.hasta) : 'Fin') : opts.dateLabel;
+
+    return '<div class="filter-tools">' +
+      '<div class="filter-toolhead">' +
+      '<div><h3>' + esc(opts.title) + '</h3><p>' + esc(opts.subtitle) + '</p></div>' +
+      '<button class="btn btn-primary enroll-cta" id="' + opts.ctaId + '"><span class="enroll-cta__plus" aria-hidden="true">' + ICON.plus + '</span> ' + esc(opts.ctaLabel) + '</button>' +
+      '</div>' +
+      '<div class="filter-bar">' +
+      '<div class="flt-segments" role="group" aria-label="Filtrar por estado">' + segments + '</div>' +
+      '<div class="flt-dates">' +
+      '<div class="flt-datepop">' +
+      '<button type="button" class="btn btn-outline flt-date-trigger' + (hasRange ? ' is-active' : '') + '" id="flt-date-trigger" aria-expanded="false" aria-controls="flt-cal">' +
+      '<span class="flt-date-trigger__label">' + ICON.calendar + '<span>' + esc(rangeLabel) + '</span></span>' + ICON.chevronDown + '</button>' +
+      '<div class="flt-cal" id="flt-cal" hidden>' +
+      '<div class="flt-cal__title">Seleccionar rango de fechas</div>' +
+      '<div class="flt-cal__summary" id="flt-cal-summary"></div>' +
+      '<div class="flt-cal__divider"></div>' +
+      '<div class="flt-cal__month"><strong id="flt-cal-month"></strong><div class="flt-cal__nav">' +
+      '<button type="button" id="flt-cal-prev" aria-label="Mes anterior">‹</button><button type="button" id="flt-cal-next" aria-label="Mes siguiente">›</button></div></div>' +
+      '<div class="flt-cal__weekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>' +
+      '<div class="flt-cal__days" id="flt-cal-days"></div>' +
+      '<div class="flt-cal__hint" id="flt-cal-hint"></div>' +
+      '<div class="flt-cal__quick"><button type="button" data-period="today">Hoy</button><button type="button" data-period="week">Últimos 7 días</button><button type="button" data-period="month">Últimos 30 días</button></div>' +
+      '<div class="flt-cal__actions"><button type="button" class="btn btn-outline btn-sm" id="flt-cal-reset">Quitar rango</button><button type="button" class="btn btn-primary btn-sm" id="flt-cal-apply">Aplicar rango</button></div>' +
+      '</div></div>' +
+      '<button type="button" class="btn btn-outline flt-clear" id="flt-clear">↺ Limpiar filtros</button>' +
+      '</div></div>' +
+      '<div class="filter-results">' + esc(opts.results) + '</div>' +
+      '</div>';
+  }
+
+  // Ajusta pager.page al rango válido y devuelve la porción de la lista a mostrar
+  function paginate(list, pager) {
+    var pages = Math.max(1, Math.ceil(list.length / pager.size));
+    pager.page = Math.min(Math.max(1, pager.page), pages);
+    var start = (pager.page - 1) * pager.size;
+    return list.slice(start, start + pager.size);
+  }
+
+  function renderPagination(total, pager, noun) {
+    var size = pager.size;
+    var pages = Math.max(1, Math.ceil(total / size));
+    var page = pager.page;
+    var start = (page - 1) * size;
+    var info = total ? 'Mostrando <strong>' + (start + 1) + '–' + Math.min(start + size, total) + '</strong> de <strong>' + total + '</strong> ' + noun : 'Mostrando 0 de 0 ' + noun;
+    var sizeOpts = [5, 10, 20].map(function (n) {
+      return '<option value="' + n + '"' + (n === size ? ' selected' : '') + '>' + n + '</option>';
+    }).join('');
+    var btns = '<button type="button" class="pager" data-page="' + (page - 1) + '" aria-label="Página anterior"' + (page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      btns += '<button type="button" class="pager' + (i === page ? ' is-active' : '') + '" data-page="' + i + '"' + (i === page ? ' aria-current="page"' : '') + '>' + i + '</button>';
+    }
+    btns += '<button type="button" class="pager" data-page="' + (page + 1) + '" aria-label="Página siguiente"' + (page === pages ? ' disabled' : '') + '>›</button>';
+    return '<div class="filter-pagination">' +
+      '<label class="page-size" for="flt-page-size">Filas por página <select id="flt-page-size">' + sizeOpts + '</select></label>' +
+      '<span class="pagination-info" aria-live="polite">' + info + '</span>' +
+      '<nav class="page-controls" aria-label="Paginación">' + btns + '</nav>' +
+      '</div>';
+  }
+
+  // Conecta segmentos, calendario, limpiar filtros y paginación. filters y pager se mutan en sitio.
+  function attachFilterToolbar(root, filters, pager) {
+    function refresh() { Shell.refreshCurrent(); }
+
+    UI.on('.flt-segment', 'click', function () {
+      filters.estado = this.getAttribute('data-estado');
+      pager.page = 1;
+      refresh();
+    }, root);
+
+    var trigger = $('#flt-date-trigger', root);
+    var panel = $('#flt-cal', root);
+    var cal = filterCal;
+
+    function renderCalendar() {
+      $('#flt-cal-month', root).textContent = MONTHS_ES[cal.month] + ' ' + cal.year;
+      $('#flt-cal-summary', root).textContent = cal.draftFrom && cal.draftTo
+        ? isoToDisplay(cal.draftFrom) + ' – ' + isoToDisplay(cal.draftTo)
+        : cal.draftFrom ? 'Desde ' + isoToDisplay(cal.draftFrom) + ' · Elige fin' : 'Selecciona una fecha de inicio';
+      $('#flt-cal-hint', root).textContent = cal.draftFrom && !cal.draftTo
+        ? 'Ahora selecciona el último día del rango.'
+        : 'Selecciona el primer día y luego el último.';
+      var first = new Date(cal.year, cal.month, 1).getDay();
+      var days = new Date(cal.year, cal.month + 1, 0).getDate();
+      var today = isoLocal(new Date());
+      var html = new Array(first + 1).join('<span></span>');
+      for (var i = 1; i <= days; i++) {
+        var d = cal.year + '-' + String(cal.month + 1).padStart(2, '0') + '-' + String(i).padStart(2, '0');
+        var cls = [];
+        if (cal.draftFrom && cal.draftTo && d > cal.draftFrom && d < cal.draftTo) cls.push('in-range');
+        if (d === cal.draftFrom) cls.push('range-start');
+        if (d === cal.draftTo) cls.push('range-end');
+        if (d === today) cls.push('today');
+        html += '<button type="button" class="' + cls.join(' ') + '" data-day="' + d + '" aria-label="' + isoToDisplay(d) + '" aria-pressed="' + (d === cal.draftFrom || d === cal.draftTo) + '">' + i + '</button>';
+      }
+      $('#flt-cal-days', root).innerHTML = html;
+    }
+    function shiftMonth(n) {
+      var d = new Date(cal.year, cal.month + n, 1);
+      cal.year = d.getFullYear(); cal.month = d.getMonth();
+      renderCalendar();
+    }
+
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      panel.hidden = !panel.hidden;
+      trigger.setAttribute('aria-expanded', String(!panel.hidden));
+      if (!panel.hidden) {
+        cal.draftFrom = filters.desde;
+        cal.draftTo = filters.hasta;
+        var ref = filters.desde || isoLocal(new Date());
+        cal.year = Number(ref.slice(0, 4)); cal.month = Number(ref.slice(5, 7)) - 1;
+        renderCalendar();
+      }
+    });
+    panel.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var day = e.target.closest('[data-day]');
+      if (!day) return;
+      var d = day.getAttribute('data-day');
+      if (!cal.draftFrom || cal.draftTo) { cal.draftFrom = d; cal.draftTo = ''; }
+      else if (d < cal.draftFrom) { cal.draftTo = cal.draftFrom; cal.draftFrom = d; }
+      else { cal.draftTo = d; }
+      renderCalendar();
+    });
+    $('#flt-cal-prev', root).addEventListener('click', function () { shiftMonth(-1); });
+    $('#flt-cal-next', root).addEventListener('click', function () { shiftMonth(1); });
+    UI.on('[data-period]', 'click', function () {
+      var end = new Date(), start = new Date(end);
+      var p = this.getAttribute('data-period');
+      if (p === 'week') start.setDate(start.getDate() - 6);
+      if (p === 'month') start.setDate(start.getDate() - 29);
+      cal.draftFrom = isoLocal(start); cal.draftTo = isoLocal(end);
+      cal.year = end.getFullYear(); cal.month = end.getMonth();
+      renderCalendar();
+    }, panel);
+    $('#flt-cal-apply', root).addEventListener('click', function () {
+      if (cal.draftFrom && !cal.draftTo) cal.draftTo = cal.draftFrom;
+      filters.desde = cal.draftFrom;
+      filters.hasta = cal.draftTo;
+      pager.page = 1;
+      refresh();
+    });
+    $('#flt-cal-reset', root).addEventListener('click', function () {
+      filters.desde = ''; filters.hasta = '';
+      pager.page = 1;
+      refresh();
+    });
+    // Cierre al hacer clic fuera o con Escape (se registra una sola vez)
+    if (!attachFilterToolbar.globalBound) {
+      attachFilterToolbar.globalBound = true;
+      var closeIfOpen = function () {
+        var p = document.getElementById('flt-cal');
+        if (p && !p.hidden) { p.hidden = true; document.getElementById('flt-date-trigger').setAttribute('aria-expanded', 'false'); }
+      };
+      document.addEventListener('click', closeIfOpen);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeIfOpen(); });
+    }
+
+    $('#flt-clear', root).addEventListener('click', function () {
+      filters.estado = ''; filters.desde = ''; filters.hasta = '';
+      pager.page = 1;
+      refresh();
+    });
+
+    $('#flt-page-size', root).addEventListener('change', function () {
+      pager.size = Number(this.value);
+      pager.page = 1;
+      refresh();
+    });
+    UI.on('.pager', 'click', function () {
+      if (this.disabled) return;
+      pager.page = Number(this.getAttribute('data-page'));
+      refresh();
+    }, root);
+  }
+
+  var tabletPager = { page: 1, size: 5 };
+  var TABLET_SEGMENTS = [
+    { id: '', label: 'Todos', dot: '' },
+    { id: 'ocupado', label: 'Ocupado', dot: 'info' },
+    { id: 'sin_asociar', label: 'Sin asociar', dot: 'warning' },
+    { id: 'mantenimiento', label: 'En mantenimiento', dot: 'danger' }
+  ];
+
+  function tabletEstado(t) {
+    return (t.status === 'ocupada') ? 'ocupado' : (t.status === 'danada') ? 'mantenimiento' : t.status;
+  }
+
+  function tabletMatchesDates(t) {
+    return isoInRange(tabletDateIso(t.since), tabletFilters);
+  }
+
+  function tabletMatchesFilters(t) {
+    if (tabletFilters.estado && tabletEstado(t) !== tabletFilters.estado) return false;
+    return tabletMatchesDates(t);
+  }
+
   function renderTablets(root) {
+    // Los contadores respetan el rango de fechas aplicado
+    var inRange = S.tablets.filter(tabletMatchesDates);
+    var total = S.tablets.filter(tabletMatchesFilters).length;
+
     root.innerHTML =
-      '<div class="card"><div class="card__head">' +
-      '<div><h3>Parque de dispositivos</h3></div>' +
-      '<button class="btn btn-primary btn-sm" id="btn-enroll">' + ICON.plus + ' Enrolar tablet</button>' +
-      '</div><div class="card__body" style="padding:0;">' + renderTabletsTable() + '</div></div>';
+      '<div class="card filter-card">' +
+      renderFilterToolbar({
+        title: 'Dispositivos registrados',
+        subtitle: 'Filtra por estado y fecha de enrolamiento',
+        ctaId: 'btn-enroll',
+        ctaLabel: 'Enrolar tablet',
+        filters: tabletFilters,
+        dateLabel: 'Fecha de enrolamiento',
+        results: total + ' de ' + S.tablets.length + ' dispositivos',
+        segments: TABLET_SEGMENTS.map(function (s) {
+          return { id: s.id, label: s.label, dot: s.dot, count: s.id ? inRange.filter(function (t) { return tabletEstado(t) === s.id; }).length : inRange.length };
+        })
+      }) +
+      '<div class="card__body" id="tablets-table-body" style="padding:0;">' + renderTabletsTable() + '</div>' +
+      renderPagination(total, tabletPager, 'tablets') +
+      '</div>';
 
     attachTabletsHandlers(root);
   }
 
   function renderTabletsTable() {
-    var rows = S.tablets.map(function (t) {
+    var list = S.tablets.filter(tabletMatchesFilters);
+    if (!list.length) {
+      tabletPager.page = 1;
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:13.5px;">No hay tablets que coincidan con los filtros seleccionados.</div>';
+    }
+    list = paginate(list, tabletPager);
+    var rows = list.map(function (t) {
       var primaryAction = '';
       if (t.camion) {
         primaryAction = '<button class="btn btn-table-danger btn-sm js-deassoc" data-id="' + t.id + '">Desasociar</button>';
@@ -336,7 +596,7 @@
       }
 
       var editBtn = '<div class="row-action-slot"><button class="btn btn-subtle-clas js-edit-clas" data-id="' + t.id + '"' + disabledAttr + ' title="' + esc(reclasTitle) + '">' +
-        ICON.edit + '<span>Reclasificar</span></button></div>';
+        ICON.edit + '<span>Editar</span></button></div>';
 
       return '<tr>' +
         '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:12px;">' + esc(t.code || t.id) + '</span></td>' +
@@ -348,7 +608,7 @@
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Dispositivo</th><th>Clasificación</th><th class="text-center">Camión</th><th class="text-center">Estado</th><th class="text-center">Enrolada</th><th class="th-actions text-center">Acciones</th>' +
+      '<th>Dispositivo</th><th>Clasificación</th><th class="text-center">Patente</th><th class="text-center">Estado</th><th class="text-center">Enrolada</th><th class="th-actions text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -660,37 +920,154 @@
       var t = S.tablets.find(function (x) { return x.id === id; });
       if (!t) return;
       if (t.status !== 'sin_asociar' || t.camion) {
-        toast('Solo se puede reclasificar una tablet cuando está en estado Sin asociar.', 'error');
+        toast('Solo se puede editar una tablet cuando está en estado Sin asociar.', 'error');
         return;
       }
-      openChangeClasModal(t);
+      openEditTabletModal(t);
     }, root);
+
+    attachFilterToolbar(root, tabletFilters, tabletPager);
+  }
+
+  function openEditTabletModal(t) {
+    var clasOpts = ['fija', 'pool', 'repuesto'].map(function (c) {
+      return '<option value="' + c + '"' + (c === t.clas ? ' selected' : '') + '>' + CLAS_LABEL[c] + '</option>';
+    }).join('');
+    var html = '<div class="form-grid">' +
+      fieldTxt('Identificador único', 'f-devid', '', t.id) +
+      fieldTxt('Código visible', 'f-code', 'Ej. TAB-31', t.code) +
+      fieldSel('Clasificación', 'f-clas', clasOpts) +
+      '</div>';
+    var overlay = confirmDialog({ title: 'Editar tablet', subtitle: t.id + ' · ' + (t.code || t.id), body: html, confirmLabel: 'Guardar cambios' }, function () {
+      var devId = ($('#f-devid', overlay).value || '').trim();
+      var code = ($('#f-code', overlay).value || '').trim() || devId;
+      var clas = $('#f-clas', overlay).value;
+      if (!devId) {
+        toast('El identificador único no puede estar vacío.', 'error');
+        return;
+      }
+      if (devId !== t.id && S.tablets.some(function (x) { return x.id === devId; })) {
+        toast('El identificador ' + devId + ' ya está registrado en el parque de tablets.', 'error');
+        return;
+      }
+      if (devId === t.id && code === t.code && clas === t.clas) {
+        toast('No se realizaron cambios.', 'info');
+        return;
+      }
+      var cambios = [];
+      if (devId !== t.id) cambios.push('ID ' + t.id + ' → ' + devId);
+      if (code !== t.code) cambios.push('código ' + (t.code || '—') + ' → ' + code);
+      if (clas !== t.clas) cambios.push('clasificación ' + CLAS_LABEL[t.clas] + ' → ' + CLAS_LABEL[clas]);
+      var oldId = t.id;
+      t.id = devId;
+      t.code = code;
+      t.clas = clas;
+      var det = oldId + ' editada: ' + cambios.join(' · ');
+      if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+      S.addActivity('Edición tablet', det, 'ok');
+      S.enqueueSync('Edición tablet', t.id);
+      toast('Tablet ' + t.id + ' actualizada correctamente.', 'success');
+      Shell.refreshCurrent();
+    });
   }
 
   /* =======================================================================
      MÓDULO 4 · GARITA
      ======================================================================= */
+  var garitaFilters = { estado: '', desde: '', hasta: '' };
+  var garitaPager = { page: 1, size: 5 };
+  var GARITA_SEGMENTS = [
+    { id: '', label: 'Todas', dot: '' },
+    { id: 'activa', label: 'Activa', dot: 'info' },
+    { id: 'mantenimiento', label: 'En mantenimiento', dot: 'danger' },
+    { id: 'cerrada', label: 'Cerrada', dot: 'success' }
+  ];
+  var ESTADIA_ESTADO = {
+    activa: { label: 'Activa', badge: 'badge-info' },
+    mantenimiento: { label: 'En mantenimiento', badge: 'badge-danger' },
+    cerrada: { label: 'Cerrada', badge: 'badge-success' }
+  };
+  function estadiaBadge(e) {
+    var st = ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa;
+    return '<span class="badge ' + st.badge + '">' + st.label + '</span>';
+  }
+
+  // Fecha de ingreso en yyyy-mm-dd (ingresoEn solo guarda dd/mm hh:mm)
+  function estadiaDateIso(e) {
+    if (e.ingresoIso) return e.ingresoIso;
+    var m = String(e.ingresoEn || '').match(/^(\d{2})\/(\d{2})/);
+    return m ? new Date().getFullYear() + '-' + m[2] + '-' + m[1] : '';
+  }
+  function estadiaMatchesDates(e) {
+    return isoInRange(estadiaDateIso(e), garitaFilters);
+  }
+  function estadiaMatchesFilters(e) {
+    if (garitaFilters.estado && e.estado !== garitaFilters.estado) return false;
+    return estadiaMatchesDates(e);
+  }
+
   function renderGarita(root) {
+    var inRange = S.estadias.filter(estadiaMatchesDates);
+    var total = S.estadias.filter(estadiaMatchesFilters).length;
+
     root.innerHTML =
-      '<div class="card"><div class="card__head">' +
-      '<div><h3>Estadías activas</h3></div>' +
-      '<button class="btn btn-primary btn-sm" id="btn-new-entry">' + ICON.plus + ' Registrar ingreso</button>' +
-      '</div><div class="card__body" style="padding:0;">' + renderEstadiasTable() + '</div></div>';
+      '<div class="card filter-card">' +
+      renderFilterToolbar({
+        title: 'Estadías de terceros',
+        subtitle: 'Filtra por estado y fecha de ingreso',
+        ctaId: 'btn-new-entry',
+        ctaLabel: 'Registrar ingreso',
+        filters: garitaFilters,
+        dateLabel: 'Fecha de ingreso',
+        results: total + ' de ' + S.estadias.length + ' estadías',
+        segments: GARITA_SEGMENTS.map(function (s) {
+          return { id: s.id, label: s.label, dot: s.dot, count: s.id ? inRange.filter(function (e) { return e.estado === s.id; }).length : inRange.length };
+        })
+      }) +
+      '<div class="card__body" style="padding:0;">' + renderEstadiasTable() + '</div>' +
+      renderPagination(total, garitaPager, 'estadías') +
+      '</div>';
     attachGaritaHandlers(root);
   }
 
   function renderEstadiasTable() {
-    var activas = S.estadias;
-    if (activas.length === 0) {
+    if (S.estadias.length === 0) {
+      garitaPager.page = 1;
       return '<div class="empty-state">' + ICON.empty + '<p>No hay vehículos de terceros registrados todavía.</p></div>';
     }
-    var rows = activas.map(function (e) {
+    var lista = S.estadias.filter(estadiaMatchesFilters);
+    if (lista.length === 0) {
+      garitaPager.page = 1;
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:13.5px;">No hay estadías que coincidan con los filtros seleccionados.</div>';
+    }
+    var rows = paginate(lista, garitaPager).map(function (e) {
       var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
-      var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.code || tablet.id) + '</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>';
-      var salidaBtn = e.estado === 'activa'
-        ? '<button class="btn btn-outline btn-sm js-exit" data-id="' + e.id + '"' + (!tablet ? ' disabled title="Asigna una tablet primero"' : '') + '>Registrar salida</button>'
-        : '<span class="badge badge-neutral">Cerrada</span>';
-      var pinBtn = '<button class="btn btn-outline btn-sm js-show-pin" data-id="' + e.id + '">Mostrar PIN</button>';
+      var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.code || tablet.id) + '</span>' : (e.estado === 'cerrada' ? '<span class="tablet-empty">Sin tablet</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>');
+      var cerrada = e.estado === 'cerrada';
+
+      // Acción primaria según el estado de la estadía
+      var primary;
+      if (e.estado === 'activa') {
+        primary = '<button class="btn btn-outline btn-sm row-primary js-exit" data-id="' + e.id + '"' +
+          (!tablet ? ' disabled title="Asigna una tablet primero (columna Tablet)"' : '') + '>Registrar salida</button>';
+      } else if (e.estado === 'mantenimiento') {
+        primary = '<button class="btn btn-outline btn-sm row-primary js-reactivar" data-id="' + e.id + '">Reactivar</button>';
+      } else {
+        primary = '<span class="row-primary row-primary--empty" title="Estadía cerrada · sin acciones pendientes">—</span>';
+      }
+
+      // Acciones secundarias en menú ⋮
+      var menuItems = '<button type="button" role="menuitem" class="row-menu__item js-show-pin" data-id="' + e.id + '">' + ICON.lock + '<span>Mostrar PIN</span></button>' +
+        '<button type="button" role="menuitem" class="row-menu__item js-estadia-edit" data-id="' + e.id + '"' +
+        (cerrada ? ' disabled title="La estadía está cerrada y ya no se puede editar"' : '') + '>' + ICON.edit + '<span>Editar</span></button>';
+      if (e.estado === 'mantenimiento') {
+        menuItems += '<button type="button" role="menuitem" class="row-menu__item js-exit" data-id="' + e.id + '"' +
+          (!tablet ? ' disabled title="Asigna una tablet primero"' : '') + '>' + ICON.logout + '<span>Registrar salida</span></button>';
+      }
+      var overflow = '<div class="row-menu">' +
+        '<button type="button" class="row-menu__toggle js-row-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones" title="Más acciones">' + ICON.dots + '</button>' +
+        '<div class="row-menu__panel" role="menu" hidden>' + menuItems + '</div>' +
+        '</div>';
       return '<tr>' +
         '<td><strong>' + esc(e.placa) + '</strong></td>' +
         '<td>' + esc(e.empresa) + '</td>' +
@@ -698,14 +1075,14 @@
         '<td>' + esc(e.documento || '—') + '</td>' +
         '<td class="text-center">' + tabletCell + '</td>' +
         '<td class="text-center">' + e.viajes.length + '</td>' +
-        '<td class="text-center">' + (e.estado === 'activa' ? '<span class="badge badge-info">Activa</span>' : '<span class="badge badge-success">Cerrada</span>') + '</td>' +
+        '<td class="text-center">' + estadiaBadge(e) + '</td>' +
         '<td class="text-center muted" style="color:var(--gray-500);">' + esc(e.ingresoEn) + '</td>' +
         '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle de la estadía">' + ICON.eye + '</button></div></td>' +
-        '<td class="text-center"><div class="row-actions">' + pinBtn + salidaBtn + '</div></td>' +
+        '<td class="text-center"><div class="row-actions row-actions--garita">' + primary + overflow + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="text-center">Detalle</th><th class="th-actions text-center">Acciones</th>' +
+      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="text-center">Detalle</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -731,7 +1108,7 @@
           documento: $('#f-documento').value || '—',
           pin: pin,
           destino: $('#f-destino').value,
-          tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr()
+          tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr(), ingresoIso: isoLocal(new Date())
         };
         S.estadias.unshift(e);
         S.enqueueSync('Ingreso de tercero', placa);
@@ -802,7 +1179,7 @@
         ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
         ['Ingreso', e.ingresoEn || '—'],
         ['Salida', e.salidaEn || '—'],
-        ['Estado', e.estado === 'activa' ? 'Activa' : 'Cerrada'],
+        ['Estado', (ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa).label],
         ['Nro. viajes', e.viajes.length + ' (' + cerrados + ' cerrados)']
       ];
       var body = fields.map(function (f) {
@@ -853,6 +1230,107 @@
         toast('PIN ' + e.pin + ' copiado al portapapeles.', 'success');
       });
     }, root);
+
+    UI.on('.js-estadia-edit', 'click', function () {
+      if (this.disabled) return;
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e || e.estado === 'cerrada') return;
+      var c = S.catalogs;
+      var estadoOpts = ['activa', 'mantenimiento'].map(function (k) {
+        return '<option value="' + k + '"' + (k === e.estado ? ' selected' : '') + '>' + ESTADIA_ESTADO[k].label + '</option>';
+      }).join('');
+      var html = '<div class="form-grid">' +
+        fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros, e.empresa)) +
+        fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros, e.tipoCarga)) +
+        fieldTxt('Patente', 'f-placa', 'Ej. ABC-123', e.placa) +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456', e.placaSecundaria) +
+        fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor', e.conductor) +
+        fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
+        fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector, e.destino)) +
+        fieldSel('Estado', 'f-estado', estadoOpts) +
+        '</div>';
+      confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
+        var placa = ($('#f-placa').value || '').trim().toUpperCase();
+        if (!placa) { toast('La patente no puede estar vacía.', 'error'); return; }
+        var prevEstado = e.estado;
+        e.empresa = $('#f-empresa').value;
+        e.tipoCarga = $('#f-carga').value;
+        e.placa = placa;
+        e.placaSecundaria = ($('#f-placa-sec').value || '').trim().toUpperCase();
+        e.conductor = ($('#f-conductor').value || '').trim() || 'Sin registrar';
+        e.documento = ($('#f-documento').value || '').trim() || '—';
+        e.destino = $('#f-destino').value;
+        e.estado = $('#f-estado').value;
+        // Mantiene la patente visible en la tablet asignada
+        var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+        if (tablet) tablet.camion = placa;
+        var det = e.id + ' · ' + placa + ' editada' + (prevEstado !== e.estado ? ' · Estado: ' + ESTADIA_ESTADO[e.estado].label : '');
+        S.enqueueSync('Edición de estadía', placa);
+        S.addActivity('Estadía editada', det, 'ok');
+        toast('Estadía de ' + placa + ' actualizada.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-reactivar', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      confirmDialog({ title: 'Reactivar estadía', subtitle: e.placa, body: '<p style="font-size:13.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y la estadía volverá a quedar Activa para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
+        e.estado = 'activa';
+        S.enqueueSync('Reactivación de estadía', e.placa);
+        S.addActivity('Estadía reactivada', e.id + ' · ' + e.placa, 'ok');
+        toast('Estadía de ' + e.placa + ' reactivada.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    // Menú ⋮ de acciones secundarias. Al abrirse, el panel se mueve a <body> con
+    // position:fixed para no quedar recortado por la tabla ni por contenedores animados.
+    UI.on('.js-row-menu', 'click', function (ev) {
+      ev.stopPropagation();
+      var toggle = this;
+      var panel = toggle._panel || (toggle._panel = toggle.nextElementSibling);
+      var wasOpen = !panel.hidden;
+      closeRowMenus();
+      if (wasOpen) return;
+      panel._toggle = toggle;
+      document.body.appendChild(panel);
+      var r = toggle.getBoundingClientRect();
+      panel.hidden = false;
+      var h = panel.offsetHeight, w = panel.offsetWidth;
+      var top = (r.bottom + 6 + h > window.innerHeight) ? r.top - h - 6 : r.bottom + 6;
+      panel.style.top = Math.max(8, top) + 'px';
+      panel.style.left = Math.max(8, r.right - w) + 'px';
+      this.setAttribute('aria-expanded', 'true');
+      this.classList.add('is-open');
+    }, root);
+    UI.on('.row-menu__item', 'click', function () { closeRowMenus(); }, root);
+    if (!attachGaritaHandlers.menuBound) {
+      attachGaritaHandlers.menuBound = true;
+      document.addEventListener('click', closeRowMenus);
+      document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeRowMenus(); });
+      window.addEventListener('resize', closeRowMenus);
+      document.addEventListener('scroll', closeRowMenus, true);
+    }
+
+    attachFilterToolbar(root, garitaFilters, garitaPager);
+  }
+
+  function closeRowMenus() {
+    // Solo los paneles abiertos viven en <body>; se devuelven a su fila o se descartan
+    $all('body > .row-menu__panel').forEach(function (p) {
+      p.hidden = true;
+      var t = p._toggle;
+      if (t && t.isConnected) {
+        t.setAttribute('aria-expanded', 'false');
+        t.classList.remove('is-open');
+        t.parentNode.appendChild(p);
+      } else {
+        p.remove();
+      }
+    });
   }
 
   /* =======================================================================
