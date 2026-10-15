@@ -153,7 +153,7 @@
       confirmBtn.textContent = isEvidence ? 'Confirmar evidencia' : 'Confirmar peso';
 
       var instruction = isEvidence
-        ? '<span style="display:inline-block;background:#FEF3C7;color:#92400E;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:6px;letter-spacing:.03em;">EVIDENCIA DE AUDITORÍA</span><br>Toma o sube una fotografía como EVIDENCIA de que la balanza está fuera de servicio.'
+        ? '<span style="display:inline-block;background:#FEF3C7;color:#92400E;font-size:13.5px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:6px;letter-spacing:.03em;">EVIDENCIA DE AUDITORÍA</span><br>Toma o sube una fotografía como EVIDENCIA de que la balanza está fuera de servicio.'
         : 'Encuadra el display de la balanza dentro de la guía y toma la fotografía.';
 
       var btnSimulateText = isEvidence ? 'Simular foto de evidencia' : 'Simular captura';
@@ -220,7 +220,7 @@
 
         resultZone.innerHTML =
           '<div class="evidence-box">' +
-          '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy-900);font-size:13.5px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy-900);font-size:15.5px;">' +
           '<span class="ocr-check-badge">' + ICON.check + '</span>' +
           '<span>Fotografía de evidencia registrada</span>' +
           '</div>' +
@@ -264,8 +264,8 @@
 
           captureZone.innerHTML =
             '<div class="display-frame has-photo" id="display-frame">' +
-            '<div style="color:#D8AC55;font-family:monospace;font-size:36px;letter-spacing:3px;font-weight:700;">' + simWeight + '</div>' +
-            '<div style="font-size:11px;color:#9ca3af;letter-spacing:1px;margin-top:4px;font-weight:500;">DISPLAY BALANZA · LECTURA DIGITAL</div>' +
+            '<div style="color:#D4B36A;font-family:monospace;font-size:38px;letter-spacing:3px;font-weight:700;">' + simWeight + '</div>' +
+            '<div style="font-size:13px;color:#9ca3af;letter-spacing:1px;margin-top:4px;font-weight:500;">DISPLAY BALANZA · LECTURA DIGITAL</div>' +
             '</div>';
         }
 

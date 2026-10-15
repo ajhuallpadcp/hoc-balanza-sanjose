@@ -76,7 +76,7 @@
     var fg = tone === 'warning' ? 'var(--warning-fg)' : tone === 'info' ? 'var(--info-fg)' : tone === 'success' ? 'var(--success-fg)' : 'var(--danger-fg)';
     return '<div class="kpi-card"><div class="kpi-card__top"><div class="kpi-card__icon" style="background:' + bg + ';color:' + fg + ';">' + icon + '</div></div>' +
       '<div class="kpi-card__value">' + value + '</div><div class="kpi-card__label">' + esc(label) + '</div>' +
-      (sub ? '<div class="kpi-card__sub" style="font-size:12px;color:var(--gray-500);margin-top:-2px;">' + esc(sub) + '</div>' : '') +
+      (sub ? '<div class="kpi-card__sub" style="font-size:14px;color:var(--gray-500);margin-top:-2px;">' + esc(sub) + '</div>' : '') +
       '</div>';
   }
 
@@ -107,7 +107,7 @@
       '<div class="card__body">' +
       (!t.activo ? '<div class="empty-state">' + ICON.empty + '<p>Inicia el turno para registrar la tara.</p></div>' :
         !t.tara ? (
-          '<p style="font-size:13px;color:var(--gray-600);margin-bottom:14px;">Aún no se ha registrado la tara del turno vigente.</p>' +
+          '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">Aún no se ha registrado la tara del turno vigente.</p>' +
           '<button class="btn btn-gold btn-block" id="btn-register-tara">Registrar tara</button>'
         ) : (
           '<div class="info-row"><span class="label">Valor confirmado</span><span class="value">' + weighSummary(t.tara) + '</span></div>' +
@@ -181,7 +181,7 @@
 
     var btnEnd = $('#btn-end-shift', root);
     if (btnEnd) btnEnd.addEventListener('click', function () {
-      confirmDialog({ title: 'Cerrar turno', body: '<p style="font-size:13.5px;color:var(--gray-600);">Se cerrará la operación del conductor para el turno vigente.</p>' }, function () {
+      confirmDialog({ title: 'Cerrar turno', body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará la operación del conductor para el turno vigente.</p>' }, function () {
         S.turno = { activo: false, camion: null, turnoNombre: null, tara: null, iniciadoEn: null };
         S.addActivity('Cierre de turno', 'Turno finalizado sin viajes pendientes', 'ok');
         toast('Turno cerrado.', 'success');
@@ -222,7 +222,7 @@
 
     UI.on('.js-ticket-descarga', 'click', function () {
       var id = this.getAttribute('data-id');
-      confirmDialog({ title: 'Registrar descarga y cerrar ticket', subtitle: 'Ticket ' + id, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se registrará la fecha y hora de descarga y el ticket pasará a estado Cerrado.</p>' }, function () {
+      confirmDialog({ title: 'Registrar descarga y cerrar ticket', subtitle: 'Ticket ' + id, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se registrará la fecha y hora de descarga y el ticket pasará a estado Cerrado.</p>' }, function () {
         var k = S.tickets.find(function (x) { return x.id === id; });
         k.descarga = S.nowStr();
         k.estado = 'Cerrado';
@@ -557,7 +557,7 @@
     var list = S.tablets.filter(tabletMatchesFilters);
     if (!list.length) {
       tabletPager.page = 1;
-      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:13.5px;">No hay tablets que coincidan con los filtros seleccionados.</div>';
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay tablets que coincidan con los filtros seleccionados.</div>';
     }
     list = paginate(list, tabletPager);
     var rows = list.map(function (t) {
@@ -599,7 +599,7 @@
         ICON.edit + '<span>Editar</span></button></div>';
 
       return '<tr>' +
-        '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:12px;">' + esc(t.code || t.id) + '</span></td>' +
+        '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:14px;">' + esc(t.code || t.id) + '</span></td>' +
         '<td>' + esc(CLAS_LABEL[t.clas]) + '</td>' +
         '<td class="text-center">' + (camionDisplay ? esc(camionDisplay) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td class="text-center">' + (STATUS_BADGE[t.status] || t.status) + '</td>' +
@@ -625,11 +625,11 @@
     var infoBanner =
       '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:14px;">' +
       '<div>' +
-      '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Clasificación actual</div>' +
-      '<div style="font-size:13.5px;font-weight:600;color:var(--navy-900);margin-top:2px;">' + esc(CLAS_LABEL[t.clas]) + '</div>' +
+      '<div style="font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Clasificación actual</div>' +
+      '<div style="font-size:15.5px;font-weight:600;color:var(--navy-900);margin-top:2px;">' + esc(CLAS_LABEL[t.clas]) + '</div>' +
       '</div>' +
       '<div style="text-align:right;">' +
-      '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Estado operativo</div>' +
+      '<div style="font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Estado operativo</div>' +
       '<div style="margin-top:2px;">' + (STATUS_BADGE[t.status] || t.status) + '</div>' +
       '</div>' +
       '</div>';
@@ -637,7 +637,7 @@
     var truckNotice = '';
     if (t.camion) {
       truckNotice =
-        '<div style="font-size:12.5px;color:var(--navy-800);background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">' +
+        '<div style="font-size:14.5px;color:var(--navy-800);background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">' +
         ICON.truck +
         '<span>Actualmente vinculada al camión propio <strong>' + esc(t.camion) + '</strong>.</span>' +
         '</div>';
@@ -662,7 +662,7 @@
       '<select class="plain" id="f-new-clas">' + optionsHtml + '</select>' +
       '</div>' +
       '</div>' +
-      '<div id="clas-feedback-box" style="margin-top:12px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:12.5px;line-height:1.45;color:var(--gray-600);">' +
+      '<div id="clas-feedback-box" style="margin-top:12px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14.5px;line-height:1.45;color:var(--gray-600);">' +
       '</div>';
 
     var overlay = confirmDialog({
@@ -802,16 +802,16 @@
 
       var modalBody = isMantenimiento
         ? '<div style="display:flex;flex-direction:column;gap:12px;">' +
-          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px 14px;font-size:13px;color:#1e40af;line-height:1.45;">' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px 14px;font-size:15px;color:#1e40af;line-height:1.45;">' +
           'Al continuar, se confirmará que la tablet ya fue reparada y se encuentra operativa.' +
           '</div>' +
-          '<p style="font-size:13.5px;color:var(--gray-700);margin:0;line-height:1.55;">' +
+          '<p style="font-size:15.5px;color:var(--gray-700);margin:0;line-height:1.55;">' +
           (camion
             ? 'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.'
             : 'La tablet <strong>' + esc(id) + '</strong> cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.') +
           '</p>' +
           '</div>'
-        : '<p style="font-size:13.5px;color:var(--gray-700);line-height:1.55;">' +
+        : '<p style="font-size:15.5px;color:var(--gray-700);line-height:1.55;">' +
           'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.' +
           '</p>';
 
@@ -861,7 +861,7 @@
         return;
       }
       var html = '<div class="form-grid">' + fieldSel('Camión propio afectado', 'f-camion-rep', optionList(afectables)) + '</div>' +
-        '<div id="repuesto-info-box" style="margin-top:10px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:12.5px;line-height:1.45;color:var(--gray-600);"></div>';
+        '<div id="repuesto-info-box" style="margin-top:10px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14.5px;line-height:1.45;color:var(--gray-600);"></div>';
 
       var overlay = confirmDialog({ title: 'Asignar tablet de repuesto', subtitle: id, body: html, confirmLabel: 'Asignar' }, function () {
         var camion = $('#f-camion-rep', overlay).value;
@@ -905,7 +905,7 @@
           }
           if (enMant.length > 0) {
             var ids = enMant.map(function (m) { return m.id; }).join(', ');
-            txt += '<br><span style="color:var(--gray-500);font-size:12px;">Historial del camión: ' + ids + ' ya en mantenimiento (se conservan para trazabilidad).</span>';
+            txt += '<br><span style="color:var(--gray-500);font-size:14px;">Historial del camión: ' + ids + ' ya en mantenimiento (se conservan para trazabilidad).</span>';
           }
           infoBox.innerHTML = txt;
         }
@@ -1038,7 +1038,7 @@
     var lista = S.estadias.filter(estadiaMatchesFilters);
     if (lista.length === 0) {
       garitaPager.page = 1;
-      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:13.5px;">No hay estadías que coincidan con los filtros seleccionados.</div>';
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay estadías que coincidan con los filtros seleccionados.</div>';
     }
     var rows = paginate(lista, garitaPager).map(function (e) {
       var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
@@ -1146,7 +1146,7 @@
         toast('No se puede cerrar: el viaje ' + incompleto.id + ' está incompleto.', 'error');
         return;
       }
-      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:13.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
+      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
         e.estado = 'cerrada'; e.salidaEn = S.nowStr();
         var tablet = S.tablets.find(function (t) { return t.id === e.tabletId; });
         if (tablet) {
@@ -1277,7 +1277,7 @@
       var id = this.getAttribute('data-id');
       var e = S.estadias.find(function (x) { return x.id === id; });
       if (!e) return;
-      confirmDialog({ title: 'Reactivar estadía', subtitle: e.placa, body: '<p style="font-size:13.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y la estadía volverá a quedar Activa para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
+      confirmDialog({ title: 'Reactivar estadía', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y la estadía volverá a quedar Activa para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
         e.estado = 'activa';
         S.enqueueSync('Reactivación de estadía', e.placa);
         S.addActivity('Estadía reactivada', e.id + ' · ' + e.placa, 'ok');
@@ -1384,7 +1384,7 @@
 
   function renderViajeActivo(estadia, v) {
     if (!v) {
-      return '<p style="font-size:13px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
+      return '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
         '<button class="btn btn-primary btn-block" id="btn-start-trip">Iniciar viaje</button>';
     }
     var entradaEst = v.sentido || null;
@@ -1400,14 +1400,14 @@
       '<div class="info-row"><span class="label">Pesaje de salida</span><span class="value">' + pesajeConEstado(salida, salidaEst) + '</span></div>';
     var btn = '';
     if (step === 'entrada') {
-      btn = '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;">¿Cómo ingresa el vehículo a la balanza?</p>' +
+      btn = '<p style="font-size:15px;color:var(--gray-600);margin-bottom:10px;">¿Cómo ingresa el vehículo a la balanza?</p>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
         '<button class="btn btn-gold btn-block js-trip-entrada" data-estado="cargado">Entrada cargado</button>' +
         '<button class="btn btn-outline btn-block js-trip-entrada" data-estado="vacio">Entrada vacío (tara)</button>' +
         '</div>';
     }
     else if (step === 'salida') btn = '<button class="btn btn-gold btn-block" id="btn-trip-salida">Registrar pesaje de salida (' + ESTADO_PESAJE[salidaEst].toLowerCase() + ')</button>';
-    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:15px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
+    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:17px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
     return rows + '<div style="margin-top:12px;">' + btn + '</div>';
   }
 

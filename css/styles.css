@@ -1,12 +1,16 @@
 :root {
-  --navy-950: #061a2d;
-  --navy-900: #0b2d4d;
-  --navy-800: #103d65;
-  --navy-700: #184e7d;
-  --gold-600: #b1842e;
-  --gold-500: #c89a3f;
-  --gold-400: #ddb75e;
-  --ink: #11273d;
+  /* Paleta oficial: primarios Dorado #C29A39 y Gris medio #BBBCBE; secundarios Gris oscuro #58595B y Blanco */
+  --brand-gold: #C29A39;
+  --brand-gray: #BBBCBE;
+  --brand-dark: #58595B;
+  --navy-950: #3a3b3d;
+  --navy-900: #58595B;
+  --navy-800: #4d4e50;
+  --navy-700: #58595B;
+  --gold-600: #a9852f;
+  --gold-500: #C29A39;
+  --gold-400: #d4b36a;
+  --ink: #3a3b3d;
   --gray-700: #5a6676;
   --gray-500: #7d8797;
   --gray-400: #a5adb7;
@@ -18,7 +22,7 @@
   --success: #1f8a55;
   --font-display: "Poppins", "Segoe UI", system-ui, sans-serif;
   --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
-  --shadow-card: 0 22px 55px -22px rgba(11, 45, 77, .28), 0 4px 16px rgba(11, 45, 77, .07);
+  --shadow-card: 0 22px 55px -22px rgba(58, 59, 61, .28), 0 4px 16px rgba(58, 59, 61, .07);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -36,7 +40,7 @@ button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 img { display: block; max-width: 100%; }
 
-:focus-visible { outline: 3px solid rgba(200, 154, 63, .55); outline-offset: 3px; }
+:focus-visible { outline: 3px solid rgba(194, 154, 57, .55); outline-offset: 3px; }
 
 .sr-only {
   position: absolute;
@@ -95,7 +99,7 @@ img { display: block; max-width: 100%; }
   line-height: 1.65;
   letter-spacing: .18em;
   text-transform: uppercase;
-  color: #687384;
+  color: var(--brand-dark);
 }
 .gold-rule {
   display: block;
@@ -113,26 +117,6 @@ img { display: block; max-width: 100%; }
   width: 255px;
   opacity: .38;
   pointer-events: none;
-}
-.brand-pillars {
-  position: absolute;
-  z-index: 2;
-  top: 181px;
-  right: 15px;
-  font-size: 8.5px;
-  font-weight: 600;
-  line-height: 1.6;
-  letter-spacing: .15em;
-  text-align: left;
-  text-transform: uppercase;
-  color: #6a7483;
-}
-.brand-pillars__rule {
-  display: block;
-  width: 23px;
-  height: 2px;
-  margin-top: 7px;
-  background: var(--gold-500);
 }
 
 /* Formulario */
@@ -186,9 +170,9 @@ img { display: block; max-width: 100%; }
   transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 .field-shell:focus-within {
-  border-color: var(--navy-700);
+  border-color: var(--brand-gold);
   background: var(--white);
-  box-shadow: 0 0 0 3px rgba(24, 78, 125, .08);
+  box-shadow: 0 0 0 3px rgba(194, 154, 57, .16);
 }
 .field-shell.has-error { border-color: var(--danger); background: #fdf5f4; }
 .field-icon, .field-toggle {
@@ -279,7 +263,7 @@ img { display: block; max-width: 100%; }
   padding: 4px 0;
   border: 0;
   background: none;
-  color: #083f91;
+  color: var(--brand-dark);
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -294,8 +278,8 @@ img { display: block; max-width: 100%; }
   border-radius: 11px;
   display: grid;
   place-items: center;
-  background: linear-gradient(102deg, #104e7d 0%, #0b3d66 48%, #082b49 100%);
-  box-shadow: 0 12px 24px -13px rgba(11, 45, 77, .72);
+  background: linear-gradient(102deg, #626365 0%, var(--brand-dark) 48%, #4a4b4d 100%);
+  box-shadow: inset 0 -3px 0 var(--brand-gold), 0 12px 24px -13px rgba(58, 59, 61, .72);
   color: #fff;
   font-family: var(--font-display);
   font-size: 17px;
@@ -303,7 +287,8 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
   transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 16px 28px -13px rgba(11, 45, 77, .8); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: inset 0 -3px 0 var(--brand-gold), 0 16px 28px -13px rgba(58, 59, 61, .8); }
+.btn-primary__default svg { color: var(--brand-gold); }
 .btn-primary:active { transform: translateY(0); }
 .btn-primary:disabled { opacity: .72; cursor: progress; transform: none; }
 .btn-primary__default { display: inline-flex; align-items: center; gap: 14px; }
@@ -332,14 +317,14 @@ img { display: block; max-width: 100%; }
   display: flex;
   flex-direction: column;
   margin-top: -1px;
-  background: linear-gradient(102deg, #0a2d4e 0%, #124a77 52%, #0a2c4b 100%);
+  background: linear-gradient(102deg, #4a4b4d 0%, var(--brand-dark) 52%, #4a4b4d 100%);
 }
 .footer-photo {
   position: relative;
   flex: 1 1 auto;
   min-height: 201px;
   overflow: hidden;
-  background-image: linear-gradient(180deg, rgba(255,255,255,.16), transparent 34%, rgba(7,26,46,.16)), url("../assets/img/truck.jpg");
+  background-image: linear-gradient(180deg, rgba(255,255,255,.16), transparent 34%, rgba(58,59,61,.16)), url("../assets/img/truck.jpg");
   background-size: cover;
   background-position: 53% center;
 }
@@ -362,7 +347,7 @@ img { display: block; max-width: 100%; }
   margin: 0;
   padding-left: 13px;
   border-left: 2px solid var(--gold-500);
-  color: #617082;
+  color: var(--brand-dark);
   font-size: 10.5px;
   font-weight: 600;
   line-height: 1.75;
@@ -379,8 +364,26 @@ img { display: block; max-width: 100%; }
 }
 .footer-wave svg { width: 100%; height: 100%; display: block; }
 .footer-wave-desktop,
-.footer-location,
 .login-card__assurance { display: none; }
+.footer-location {
+  position: absolute;
+  z-index: 4;
+  left: 18px;
+  bottom: 0;
+  height: 42px;
+  margin: 0;
+  padding-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.footer-location span { color: var(--brand-gold); }
+.footer-location i { display: none; }
 .footer-version {
   position: relative;
   z-index: 3;
@@ -389,9 +392,10 @@ img { display: block; max-width: 100%; }
   padding-top: 5px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: linear-gradient(102deg, #0a2d4e 0%, #124a77 52%, #0a2c4b 100%);
-  color: rgba(255,255,255,.76);
+  justify-content: flex-end;
+  padding-right: 18px;
+  background: linear-gradient(102deg, #4a4b4d 0%, var(--brand-dark) 52%, #4a4b4d 100%);
+  color: rgba(255,255,255,.82);
   font-size: 12px;
 }
 
@@ -425,7 +429,6 @@ img { display: block; max-width: 100%; }
 @media (max-width: 374px) {
   .brand-header { min-height: 232px; padding-top: 20px; }
   .brand-logo { width: 162px; }
-  .brand-pillars { top: 174px; right: 8px; font-size: 7.5px; }
   .brand-header__mountain { top: 70px; right: -92px; width: 235px; }
   .login-zone { padding-inline: 13px; }
   .login-card { padding: 23px 20px; }
@@ -440,7 +443,6 @@ img { display: block; max-width: 100%; }
   .brand-logo { width: 276px; }
   .brand-tagline { font-size: 15px; }
   .brand-header__mountain { top: 62px; right: -58px; width: 350px; }
-  .brand-pillars { top: 184px; right: 48px; font-size: 10px; }
   .login-zone { padding: 0 40px 38px; }
   .login-card { padding: 38px 44px; border-radius: 22px; }
   .login-card__title { font-size: 34px; }
@@ -493,7 +495,7 @@ img { display: block; max-width: 100%; }
     top: clamp(158px, 17.2vh, 183px);
     left: 6%;
     margin: 0;
-    color: #526b82;
+    color: var(--brand-dark);
     font-size: clamp(11px, .9vw, 15px);
     line-height: 1.75;
     text-align: left;
@@ -513,14 +515,6 @@ img { display: block; max-width: 100%; }
     -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 66%, transparent 100%);
     mask-image: linear-gradient(180deg, #000 0%, #000 66%, transparent 100%);
   }
-  .brand-pillars {
-    top: clamp(148px, 16.3vh, 174px);
-    right: 6.7%;
-    bottom: auto;
-    color: #52677b;
-    font-size: clamp(9px, .72vw, 12px);
-    line-height: 1.7;
-  }
   .brand-footer {
     position: absolute;
     z-index: 1;
@@ -529,7 +523,7 @@ img { display: block; max-width: 100%; }
     height: auto;
     margin: 0;
     display: block;
-    background: #edf2f6;
+    background: #f1f1f2;
   }
   .footer-photo {
     position: absolute;
@@ -537,7 +531,7 @@ img { display: block; max-width: 100%; }
     min-height: 0;
     background-image:
       radial-gradient(circle at 8% 48%, rgba(255,183,63,.24), transparent 18%),
-      linear-gradient(180deg, rgba(255,255,255,.08), transparent 58%, rgba(7,26,46,.16)),
+      linear-gradient(180deg, rgba(255,255,255,.08), transparent 58%, rgba(58,59,61,.16)),
       url("../assets/img/truck.jpg");
     background-size: cover;
     background-position: center;
@@ -570,7 +564,7 @@ img { display: block; max-width: 100%; }
     padding: 0;
     display: block;
     background: none;
-    color: #63778a;
+    color: var(--brand-dark);
     font-size: 10px;
   }
   .footer-location {
@@ -578,18 +572,21 @@ img { display: block; max-width: 100%; }
     z-index: 5;
     right: 2.5%;
     bottom: clamp(20px, 2.7vh, 30px);
+    left: auto;
+    height: auto;
     margin: 0;
+    padding: 0;
     display: flex;
     align-items: center;
     gap: 9px;
-    color: #63778a;
+    color: var(--brand-dark);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: .18em;
     text-transform: uppercase;
   }
-  .footer-location span { color: #9aa6b1; }
-  .footer-location i { width: 30px; height: 2px; margin-left: 8px; background: var(--gold-500); }
+  .footer-location span { color: var(--brand-gray); }
+  .footer-location i { display: block; width: 30px; height: 2px; margin-left: 8px; background: var(--gold-500); }
   .login-zone {
     position: absolute;
     z-index: 4;
@@ -613,7 +610,7 @@ img { display: block; max-width: 100%; }
     border: 1px solid rgba(232,236,239,.72);
     border-radius: 20px;
     background: rgba(255,255,255,.94);
-    box-shadow: 0 30px 66px -25px rgba(11,45,77,.35), 0 4px 18px rgba(11,45,77,.08);
+    box-shadow: 0 30px 66px -25px rgba(58,59,61,.35), 0 4px 18px rgba(58,59,61,.08);
     backdrop-filter: blur(8px);
     pointer-events: auto;
   }
@@ -640,13 +637,12 @@ img { display: block; max-width: 100%; }
   }
   .login-card__assurance p {
     margin: 0;
-    color: #5e7183;
+    color: var(--brand-dark);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: .18em;
     text-transform: uppercase;
   }
-  .login-card__assurance b { padding: 0 8px; color: #8e9aa5; font-weight: 400; }
 }
 
 @media (min-width: 1500px) {
@@ -657,7 +653,6 @@ img { display: block; max-width: 100%; }
   .brand-logo { top: 22px; width: 180px; }
   .brand-tagline { top: 124px; }
   .gold-rule { top: 180px; }
-  .brand-pillars { top: 120px; }
   .brand-header__mountain { top: -72px; width: min(36vw, 520px); }
   .login-zone { padding-top: 158px; padding-bottom: 112px; }
   .login-card { padding-top: 30px; padding-bottom: 24px; }

@@ -150,7 +150,7 @@
     $('#logout-btn').addEventListener('click', function () {
       UI.confirmDialog({
         title: 'Cerrar sesión',
-        body: '<p style="font-size:13.5px;color:var(--gray-600);">¿Deseas cerrar la sesión actual y reiniciar la demostración?</p>',
+        body: '<p style="font-size:15.5px;color:var(--gray-600);">¿Deseas cerrar la sesión actual y reiniciar la demostración?</p>',
         confirmLabel: 'Cerrar sesión'
       }, function () {
         S.reset();
