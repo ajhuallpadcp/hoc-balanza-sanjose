@@ -191,12 +191,13 @@
 
     var btnTara = $('#btn-register-tara', root);
     if (btnTara) btnTara.addEventListener('click', function () {
-      openWeighModal({ title: 'Registrar tara', subtitle: 'Camión ' + S.turno.camion, kind: 'tara', allowOutOfService: false }, function (res) {
+      openWeighModal({ title: 'Registrar tara', subtitle: 'Camión ' + S.turno.camion, kind: 'tara', allowOutOfService: true }, function (res) {
         res.ts = S.nowStr();
         S.turno.tara = res;
         S.enqueueSync('Tara', 'Tara ' + S.turno.camion);
-        S.addActivity('Tara registrada', 'Camión ' + S.turno.camion + ' · ' + res.value.toLocaleString('es-PE') + ' kg', 'ok');
-        toast('Tara registrada. Ya puedes crear un nuevo viaje.', 'success');
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : ' · ' + res.value.toLocaleString('es-PE') + ' kg';
+        S.addActivity('Tara registrada', 'Camión ' + S.turno.camion + actDet, 'ok');
+        toast((res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Tara registrada.') + ' Ya puedes crear un nuevo viaje.', 'success');
         Shell.refreshCurrent();
       });
     });
@@ -1237,9 +1238,6 @@
       var e = S.estadias.find(function (x) { return x.id === id; });
       if (!e || e.estado === 'cerrada') return;
       var c = S.catalogs;
-      var estadoOpts = ['activa', 'mantenimiento'].map(function (k) {
-        return '<option value="' + k + '"' + (k === e.estado ? ' selected' : '') + '>' + ESTADIA_ESTADO[k].label + '</option>';
-      }).join('');
       var html = '<div class="form-grid">' +
         fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros, e.empresa)) +
         fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros, e.tipoCarga)) +
@@ -1248,12 +1246,10 @@
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor', e.conductor) +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
         fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector, e.destino)) +
-        fieldSel('Estado', 'f-estado', estadoOpts) +
         '</div>';
       confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
         var placa = ($('#f-placa').value || '').trim().toUpperCase();
         if (!placa) { toast('La patente no puede estar vacía.', 'error'); return; }
-        var prevEstado = e.estado;
         e.empresa = $('#f-empresa').value;
         e.tipoCarga = $('#f-carga').value;
         e.placa = placa;
@@ -1261,11 +1257,10 @@
         e.conductor = ($('#f-conductor').value || '').trim() || 'Sin registrar';
         e.documento = ($('#f-documento').value || '').trim() || '—';
         e.destino = $('#f-destino').value;
-        e.estado = $('#f-estado').value;
         // Mantiene la patente visible en la tablet asignada
         var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
         if (tablet) tablet.camion = placa;
-        var det = e.id + ' · ' + placa + ' editada' + (prevEstado !== e.estado ? ' · Estado: ' + ESTADIA_ESTADO[e.estado].label : '');
+        var det = e.id + ' · ' + placa + ' editada';
         S.enqueueSync('Edición de estadía', placa);
         S.addActivity('Estadía editada', det, 'ok');
         toast('Estadía de ' + placa + ' actualizada.', 'success');
@@ -1367,7 +1362,7 @@
       '<div class="card__body">' + renderViajeActivo(estadia, viajeActivo) + '</div></div>' +
       '</div>' +
 
-      '<div class="card"><div class="card__head"><div><h3>Viajes de la estadía</h3><p>Peso neto = cargado − vacío</p></div></div>' +
+      '<div class="card"><div class="card__head"><div><h3>Viajes de la estadía</h3></div></div>' +
       '<div class="card__body" style="padding:0;">' + renderViajesTercerosTable(estadia) + '</div></div>';
 
     attachTercerosHandlers(root, estadia);
@@ -1383,6 +1378,12 @@
   }
 
   function renderViajeActivo(estadia, v) {
+    if (!v && estadia.balanzaFueraServicio) {
+      // Entrada registrada con balanza fuera de servicio: no se registran más pesos, el conductor devuelve la tablet.
+      return '<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:15px;">' +
+        '<strong>Balanza fuera de servicio.</strong> El viaje se cerró con evidencia fotográfica. Devuelve la tablet en Garita para finalizar la estadía.</div>' +
+        '<button class="btn btn-primary btn-block" disabled title="Balanza fuera de servicio · devuelve la tablet en Garita">Iniciar viaje</button>';
+    }
     if (!v) {
       return '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
         '<button class="btn btn-primary btn-block" id="btn-start-trip">Iniciar viaje</button>';
@@ -1448,7 +1449,17 @@
         v.sentido = estado;
         v[estado] = res;
         S.enqueueSync('Pesaje de entrada tercero', v.id);
-        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje de entrada (' + ESTADO_PESAJE[estado].toLowerCase() + ') registrado.', 'success');
+        if (res.outOfService) {
+          // Sin balanza no se registra la salida: se cierra el viaje y el conductor devuelve la tablet.
+          v.neto = null;
+          v.estado = 'Cerrado';
+          estadia.balanzaFueraServicio = true;
+          S.addActivity('Viaje cerrado', v.id + ' · balanza fuera de servicio en la entrada (evidencia)', 'ok');
+          toast('Evidencia registrada. Viaje cerrado: devuelve la tablet en Garita.', 'success');
+          Shell.refreshCurrent();
+          return;
+        }
+        toast('Pesaje de entrada (' + ESTADO_PESAJE[estado].toLowerCase() + ') registrado.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
