@@ -1,0 +1,1505 @@
+/* =========================================================================
+   HOCHSCHILD · CONTROL BALANZA SAN JOSÉ
+   modules.js — pantallas de negocio (dashboard + 4 módulos operativos)
+   ========================================================================= */
+(function () {
+  "use strict";
+  var S = window.Store;
+  var $ = UI.$, $all = UI.$all, esc = UI.esc, ICON = UI.ICON, toast = UI.toast;
+  var openModal = UI.openModal, closeModal = UI.closeModal, confirmDialog = UI.confirmDialog, openWeighModal = UI.openWeighModal;
+
+  function syncStatusFor(ref) {
+    var item = S.syncQueue.find(function (i) { return i.referencia === ref; });
+    return item ? item.status : 'sincronizado';
+  }
+  function syncBadge(status) {
+    if (status === 'pendiente') return '<span class="badge badge-warning">' + ICON.cloud + ' Pendiente</span>';
+    if (status === 'sincronizando') return '<span class="badge badge-info">' + ICON.cloud + ' Sincronizando</span>';
+    if (status === 'error') return '<span class="badge badge-danger">Error</span>';
+    return '<span class="badge badge-success">Sincronizado</span>';
+  }
+  function optionList(arr, current) {
+    return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+  }
+  function fieldSel(label, id, options, extra) {
+    return '<div><label class="form-label">' + esc(label) + '</label>' +
+      '<select class="plain" id="' + id + '">' + options + '</select>' + (extra || '') + '</div>';
+  }
+  function fieldTxt(label, id, placeholder, value) {
+    return '<div><label class="form-label">' + esc(label) + '</label>' +
+      '<input class="plain" id="' + id + '" type="text" placeholder="' + esc(placeholder || '') + '" value="' + esc(value || '') + '"></div>';
+  }
+  function weighSummary(w) {
+    if (!w) return '<span class="muted" style="color:var(--gray-400)">—</span>';
+    if (w.outOfService) {
+      return '<span class="badge badge-warning" title="Balanza fuera de servicio · Evidencia en auditoría">Fuera de servicio (Evidencia)</span>';
+    }
+    if (w.value == null) return '<span class="muted" style="color:var(--gray-400)">—</span>';
+    var bits = [w.value.toLocaleString('es-PE') + ' kg'];
+    return w.value.toLocaleString('es-PE') + ' kg' +
+      (w.estimated ? ' <span class="badge badge-warning" style="margin-left:4px;">Estimado</span>' : '') +
+      (w.manual ? ' <span class="badge badge-neutral" style="margin-left:4px;">Corregido</span>' : '');
+  }
+
+  /* =======================================================================
+     DASHBOARD
+     ======================================================================= */
+  function renderDashboard(root) {
+    if (S.role === 'garita') {
+      var poolEnUso = S.tablets.filter(function (t) { return t.clas === 'pool' && (t.status === 'ocupado' || t.status === 'ocupada'); }).length;
+      var poolSinAsociar = S.tablets.filter(function (t) { return t.clas === 'pool' && t.status === 'sin_asociar'; }).length;
+
+      root.innerHTML =
+        '<div class="kpi-grid">' +
+        kpiCard('info', ICON.users, poolEnUso, 'Pool en uso', 'Tablets asignadas a estadías activas') +
+        kpiCard('warning', ICON.tablet, poolSinAsociar, 'Pool sin asociar', 'Tablets libres para asignación') +
+        '</div>';
+      return;
+    }
+
+    var camionesPropios = S.tablets.filter(function (t) { return t.clas === 'fija'; }).length;
+    var poolTerceros = S.tablets.filter(function (t) { return t.clas === 'pool'; }).length;
+    var repuestos = S.tablets.filter(function (t) { return t.clas === 'repuesto'; }).length;
+    var enMantenimiento = S.tablets.filter(function (t) { return t.status === 'danada' || t.status === 'mantenimiento'; }).length;
+
+    root.innerHTML =
+      '<div class="kpi-grid">' +
+      kpiCard('info', ICON.truck, camionesPropios, 'Camión propio') +
+      kpiCard('warning', ICON.users, poolTerceros, 'Pool de terceros') +
+      kpiCard('success', ICON.tablet, repuestos, 'De repuesto') +
+      kpiCard('danger', ICON.warn, enMantenimiento, 'Mantenimiento') +
+      '</div>';
+  }
+
+  function kpiCard(tone, icon, value, label, sub) {
+    var bg = tone === 'warning' ? 'var(--warning-bg)' : tone === 'info' ? 'var(--info-bg)' : tone === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)';
+    var fg = tone === 'warning' ? 'var(--warning-fg)' : tone === 'info' ? 'var(--info-fg)' : tone === 'success' ? 'var(--success-fg)' : 'var(--danger-fg)';
+    return '<div class="kpi-card"><div class="kpi-card__top"><div class="kpi-card__icon" style="background:' + bg + ';color:' + fg + ';">' + icon + '</div></div>' +
+      '<div class="kpi-card__value">' + value + '</div><div class="kpi-card__label">' + esc(label) + '</div>' +
+      (sub ? '<div class="kpi-card__sub" style="font-size:14px;color:var(--gray-500);margin-top:-2px;">' + esc(sub) + '</div>' : '') +
+      '</div>';
+  }
+
+  /* =======================================================================
+     MÓDULO 2 · MIS VIAJES (Conductor Propio)
+     ======================================================================= */
+  function renderMisViajes(root) {
+    var t = S.turno;
+    var hasOpenTicket = S.tickets.some(function (k) { return k.estado === 'Abierto'; });
+
+    root.innerHTML =
+      '<div class="grid-2">' +
+      '<div class="card"><div class="card__head"><div><h3>Turno</h3><p>Identificación automática del camión</p></div></div>' +
+      '<div class="card__body">' +
+      '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(S.users.propio.name) + '</span></div>' +
+      '<div class="info-row"><span class="label">Camión asociado</span><span class="value">' + (t.camion ? esc(t.camion) : '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Turno</span><span class="value">' + (t.turnoNombre ? esc(t.turnoNombre) : '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Estado</span><span class="value">' + (t.activo ? '<span class="badge badge-success">Vigente</span>' : '<span class="badge badge-neutral">No iniciado</span>') + '</span></div>' +
+      '<div style="margin-top:14px;">' +
+      (!t.activo
+        ? '<button class="btn btn-primary btn-block" id="btn-start-shift">Iniciar turno</button>'
+        : '<button class="btn btn-outline btn-block" id="btn-end-shift"' + (hasOpenTicket ? ' disabled title="Existe un ticket abierto"' : '') + '>Cerrar turno</button>'
+      ) +
+      '</div>' +
+      '</div></div>' +
+
+      '<div class="card"><div class="card__head"><div><h3>Tara del camión</h3><p>Obligatoria antes de crear viajes</p></div></div>' +
+      '<div class="card__body">' +
+      (!t.activo ? '<div class="empty-state">' + ICON.empty + '<p>Inicia el turno para registrar la tara.</p></div>' :
+        !t.tara ? (
+          '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">Aún no se ha registrado la tara del turno vigente.</p>' +
+          '<button class="btn btn-gold btn-block" id="btn-register-tara">Registrar tara</button>'
+        ) : (
+          '<div class="info-row"><span class="label">Valor confirmado</span><span class="value">' + weighSummary(t.tara) + '</span></div>' +
+          '<div class="info-row"><span class="label">Registrada</span><span class="value">' + esc(t.tara.ts) + '</span></div>' +
+          '<div class="info-row"><span class="label">Sincronización</span><span class="value">' + syncBadge(syncStatusFor('Tara ' + t.camion)) + '</span></div>'
+        )
+      ) +
+      '</div></div>' +
+      '</div>' +
+
+      '<div class="card"><div class="card__head">' +
+      '<div><h3>Mis viajes del turno</h3><p>Ticket de extracción</p></div>' +
+      '<button class="btn btn-primary btn-sm" id="btn-new-ticket"' + (!t.tara || hasOpenTicket ? ' disabled title="' + (!t.tara ? 'Registra la tara primero' : 'Ya existe un ticket abierto') + '"' : '') + '>' + ICON.plus + ' Nuevo viaje</button>' +
+      '</div>' +
+      '<div class="card__body" style="padding:0;">' +
+      renderTicketsTable() +
+      '</div></div>';
+
+    attachMisViajesHandlers(root);
+  }
+
+  function renderTicketsTable() {
+    if (S.tickets.length === 0) {
+      return '<div class="empty-state">' + ICON.empty + '<p>No se han creado viajes en este turno todavía.</p></div>';
+    }
+    var rows = S.tickets.map(function (k) {
+      var action;
+      if (!k.pesajeCargado) {
+        action = '<button class="btn btn-outline btn-sm js-ticket-cargado" data-id="' + k.id + '">Pesaje cargado</button>';
+      } else if (!k.descarga) {
+        action = '<button class="btn btn-outline btn-sm js-ticket-descarga" data-id="' + k.id + '">Descarga y cierre</button>';
+      } else {
+        action = '<button class="icon-btn js-ticket-view" data-id="' + k.id + '" title="Ver detalle">' + ICON.eye + '</button>';
+      }
+      return '<tr>' +
+        '<td><strong>' + k.id + '</strong></td>' +
+        '<td>' + esc(k.tolva) + '</td>' +
+        '<td>' + esc(k.tipoMaterial) + '</td>' +
+        '<td>' + esc(k.destino) + '</td>' +
+        '<td class="num">' + weighSummary(k.pesajeCargado) + '</td>' +
+        '<td class="num">' + (k.neto != null ? k.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td>' + (k.descarga ? esc(k.descarga) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td class="text-center">' + (k.estado === 'Abierto' ? '<span class="badge badge-info">Abierto</span>' : '<span class="badge badge-success">Cerrado</span>') + '</td>' +
+        '<td class="text-center">' + syncBadge(syncStatusFor(k.id)) + '</td>' +
+        '<td class="text-center"><div class="row-actions">' + action + '</div></td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+      '<th>Ticket</th><th>Tolva</th><th>Material</th><th>Destino</th><th>Pesaje cargado</th><th>Neto</th><th>Descarga</th><th class="text-center">Estado</th><th class="text-center">Sync</th><th class="th-actions text-center">Acciones</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function attachMisViajesHandlers(root) {
+    var btnStart = $('#btn-start-shift', root);
+    if (btnStart) btnStart.addEventListener('click', function () {
+      var h = new Date().getHours();
+      var turnoNombre = (h >= 7 && h < 15) ? 'Turno Mañana' : (h >= 15 && h < 23) ? 'Turno Tarde' : 'Turno Noche';
+      var html =
+        '<div class="info-row"><span class="label">Turno asignado</span><span class="value"><strong>' + esc(turnoNombre) + '</strong></span></div>' +
+        '<p class="form-hint" style="margin-top:10px;">Turno asignado automáticamente según la programación operativa.</p>';
+      confirmDialog({ title: 'Iniciar turno', subtitle: 'Camión V-101 · ' + S.users.propio.name, body: html, confirmLabel: 'Iniciar turno' }, function () {
+        S.turno.activo = true;
+        S.turno.camion = 'V-101';
+        S.turno.turnoNombre = turnoNombre;
+        S.turno.iniciadoEn = S.nowStr();
+        S.addActivity('Inicio de turno', S.turno.turnoNombre + ' · Camión V-101', 'ok');
+        toast('Turno iniciado. Camión V-101 identificado automáticamente.', 'success');
+        Shell.refreshCurrent();
+      });
+    });
+
+    var btnEnd = $('#btn-end-shift', root);
+    if (btnEnd) btnEnd.addEventListener('click', function () {
+      confirmDialog({ title: 'Cerrar turno', body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará la operación del conductor para el turno vigente.</p>' }, function () {
+        S.turno = { activo: false, camion: null, turnoNombre: null, tara: null, iniciadoEn: null };
+        S.addActivity('Cierre de turno', 'Turno finalizado sin viajes pendientes', 'ok');
+        toast('Turno cerrado.', 'success');
+        Shell.refreshCurrent();
+      });
+    });
+
+    var btnTara = $('#btn-register-tara', root);
+    if (btnTara) btnTara.addEventListener('click', function () {
+      openWeighModal({ title: 'Registrar tara', subtitle: 'Camión ' + S.turno.camion, kind: 'tara', allowOutOfService: true }, function (res) {
+        res.ts = S.nowStr();
+        S.turno.tara = res;
+        S.enqueueSync('Tara', 'Tara ' + S.turno.camion);
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : ' · ' + res.value.toLocaleString('es-PE') + ' kg';
+        S.addActivity('Tara registrada', 'Camión ' + S.turno.camion + actDet, 'ok');
+        toast((res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Tara registrada.') + ' Ya puedes crear un nuevo viaje.', 'success');
+        Shell.refreshCurrent();
+      });
+    });
+
+    var btnNewTicket = $('#btn-new-ticket', root);
+    if (btnNewTicket) btnNewTicket.addEventListener('click', openTicketForm);
+
+    UI.on('.js-ticket-cargado', 'click', function () {
+      var id = this.getAttribute('data-id');
+      openWeighModal({ title: 'Pesaje cargado', subtitle: 'Ticket ' + id, kind: 'cargado', allowOutOfService: true, hideEstimatedValue: true }, function (res) {
+        res.ts = S.nowStr();
+        var k = S.tickets.find(function (x) { return x.id === id; });
+        k.pesajeCargado = res;
+        var tara = S.turno.tara;
+        k.neto = (res.outOfService || res.value == null || !tara || tara.value == null) ? null : Math.max(0, res.value - tara.value);
+        S.enqueueSync('Pesaje cargado', id);
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + res.value.toLocaleString('es-PE') + ' kg' : '');
+        S.addActivity('Pesaje cargado', 'Ticket ' + id + actDet, 'ok');
+        toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje cargado registrado.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-ticket-descarga', 'click', function () {
+      var id = this.getAttribute('data-id');
+      confirmDialog({ title: 'Registrar descarga y cerrar ticket', subtitle: 'Ticket ' + id, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se registrará la fecha y hora de descarga y el ticket pasará a estado Cerrado.</p>' }, function () {
+        var k = S.tickets.find(function (x) { return x.id === id; });
+        k.descarga = S.nowStr();
+        k.estado = 'Cerrado';
+        S.enqueueSync('Descarga', id);
+        S.addActivity('Descarga y cierre', 'Ticket ' + id + ' cerrado', 'ok');
+        toast('Ticket cerrado correctamente.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-ticket-view', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var k = S.tickets.find(function (x) { return x.id === id; });
+      var fields = [['Tolva', 'tolva'], ['Labor', 'labor'], ['Nivel', 'nivel'], ['Equipo Scoop', 'equipoScoop'],
+      ['Operador Scoop', 'operadorScoop'], ['Tipo de material', 'tipoMaterial'],
+      ['Punto intermedio', 'puntoIntermedio'], ['Destino', 'destino']];
+      var body = fields.map(function (f) {
+        return '<div class="info-row"><span class="label">' + f[0] + '</span><span class="value">' + esc(k[f[1]] || '—') + '</span></div>';
+      }).join('') +
+        '<div class="info-row"><span class="label">Pesaje cargado</span><span class="value">' + weighSummary(k.pesajeCargado) + '</span></div>' +
+        '<div class="info-row"><span class="label">Descarga</span><span class="value">' + esc(k.descarga || '—') + '</span></div>';
+      confirmDialog({ title: 'Detalle del ticket ' + id, body: body, confirmLabel: 'Cerrar' }, function () { });
+      $('.js-modal-cancel').style.display = 'none';
+    }, root);
+  }
+
+  function openTicketForm() {
+    var c = S.catalogs;
+    var html = '<div class="form-grid">' +
+      fieldSel('Tolva', 'f-tolva', optionList(c.tolvas)) +
+      fieldSel('Labor', 'f-labor', optionList(c.labores)) +
+      fieldSel('Nivel', 'f-nivel', optionList(c.niveles)) +
+      fieldSel('Equipo Scoop', 'f-scoop', optionList(c.equiposScoop)) +
+      fieldSel('Operador Scoop', 'f-opscoop', optionList(c.operadoresScoop)) +
+      fieldSel('Tipo de material', 'f-material', optionList(c.tiposMaterial)) +
+      fieldSel('Punto intermedio / bocamina', 'f-punto', optionList(c.puntosIntermedios)) +
+      fieldSel('Destino', 'f-destino', optionList(c.destinos)) +
+      '</div>';
+    confirmDialog({ title: 'Nuevo viaje · Ticket de extracción', subtitle: 'Camión ' + S.turno.camion, body: html, confirmLabel: 'Crear ticket' }, function () {
+      var k = {
+        id: S.genTicketId(),
+        tolva: $('#f-tolva').value, labor: $('#f-labor').value, nivel: $('#f-nivel').value,
+        equipoScoop: $('#f-scoop').value, operadorScoop: $('#f-opscoop').value,
+        tipoMaterial: $('#f-material').value, puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
+        estado: 'Abierto', pesajeCargado: null, descarga: null, neto: null
+      };
+      S.tickets.unshift(k);
+      S.enqueueSync('Ticket de extracción', k.id);
+      S.addActivity('Ticket creado', k.id + ' · ' + k.tipoMaterial + ' → ' + k.destino, 'ok');
+      toast('Ticket ' + k.id + ' creado en estado Abierto.', 'success');
+      Shell.refreshCurrent();
+    });
+  }
+
+  /* =======================================================================
+     MÓDULO 3 · ADMINISTRACIÓN DE TABLETS
+     ======================================================================= */
+  var CLAS_LABEL = { fija: 'Camión propio', pool: 'Pool de terceros', repuesto: 'Repuesto' };
+  var STATUS_BADGE = {
+    sin_asociar: '<span class="badge badge-warning">Sin asociar</span>',
+    ocupado: '<span class="badge badge-info">Ocupado</span>',
+    ocupada: '<span class="badge badge-info">Ocupado</span>',
+    danada: '<span class="badge badge-danger">En mantenimiento</span>',
+    mantenimiento: '<span class="badge badge-danger">En mantenimiento</span>'
+  };
+
+  var tabletFilters = { estado: '', desde: '', hasta: '' };
+
+  // dd/mm/yyyy -> yyyy-mm-dd (comparable con los inputs de fecha)
+  function tabletDateIso(s) {
+    var p = (s || '').split('/');
+    return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : '';
+  }
+
+  /* -----------------------------------------------------------------------
+     Barra de filtros compartida (estado + rango de fechas) y paginación.
+     Se usa en Administración de Tablets y en Garita.
+     ----------------------------------------------------------------------- */
+  // Estado del calendario de rango (borrador hasta pulsar "Aplicar rango")
+  var filterCal = { draftFrom: '', draftTo: '', month: new Date().getMonth(), year: new Date().getFullYear() };
+  var MONTHS_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  function isoLocal(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  // yyyy-mm-dd -> dd/mm/yyyy
+  function isoToDisplay(s) {
+    var p = (s || '').split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : '';
+  }
+  function isoInRange(d, f) {
+    if (f.desde && d < f.desde) return false;
+    if (f.hasta && d > f.hasta) return false;
+    return true;
+  }
+
+  // opts: { title, subtitle, ctaId, ctaLabel, segments:[{id,label,dot,count}], filters, dateLabel, results }
+  function renderFilterToolbar(opts) {
+    var f = opts.filters;
+    var segments = opts.segments.map(function (s) {
+      var sel = s.id === f.estado;
+      return '<button type="button" class="flt-segment' + (sel ? ' is-selected' : '') + '" data-estado="' + s.id + '" aria-pressed="' + sel + '">' +
+        (s.dot ? '<span class="flt-dot flt-dot--' + s.dot + '"></span>' : '') +
+        esc(s.label) + ' <span class="flt-count">' + s.count + '</span></button>';
+    }).join('');
+    var hasRange = !!(f.desde || f.hasta);
+    var rangeLabel = hasRange ? (f.desde ? isoToDisplay(f.desde) : 'Inicio') + ' – ' + (f.hasta ? isoToDisplay(f.hasta) : 'Fin') : opts.dateLabel;
+
+    return '<div class="filter-tools">' +
+      '<div class="filter-toolhead">' +
+      '<div><h3>' + esc(opts.title) + '</h3><p>' + esc(opts.subtitle) + '</p></div>' +
+      '<button class="btn btn-primary enroll-cta" id="' + opts.ctaId + '"><span class="enroll-cta__plus" aria-hidden="true">' + ICON.plus + '</span> ' + esc(opts.ctaLabel) + '</button>' +
+      '</div>' +
+      '<div class="filter-bar">' +
+      '<div class="flt-segments" role="group" aria-label="Filtrar por estado">' + segments + '</div>' +
+      '<div class="flt-dates">' +
+      '<div class="flt-datepop">' +
+      '<button type="button" class="btn btn-outline flt-date-trigger' + (hasRange ? ' is-active' : '') + '" id="flt-date-trigger" aria-expanded="false" aria-controls="flt-cal">' +
+      '<span class="flt-date-trigger__label">' + ICON.calendar + '<span>' + esc(rangeLabel) + '</span></span>' + ICON.chevronDown + '</button>' +
+      '<div class="flt-cal" id="flt-cal" hidden>' +
+      '<div class="flt-cal__title">Seleccionar rango de fechas</div>' +
+      '<div class="flt-cal__summary" id="flt-cal-summary"></div>' +
+      '<div class="flt-cal__divider"></div>' +
+      '<div class="flt-cal__month"><strong id="flt-cal-month"></strong><div class="flt-cal__nav">' +
+      '<button type="button" id="flt-cal-prev" aria-label="Mes anterior">‹</button><button type="button" id="flt-cal-next" aria-label="Mes siguiente">›</button></div></div>' +
+      '<div class="flt-cal__weekdays"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>' +
+      '<div class="flt-cal__days" id="flt-cal-days"></div>' +
+      '<div class="flt-cal__hint" id="flt-cal-hint"></div>' +
+      '<div class="flt-cal__quick"><button type="button" data-period="today">Hoy</button><button type="button" data-period="week">Últimos 7 días</button><button type="button" data-period="month">Últimos 30 días</button></div>' +
+      '<div class="flt-cal__actions"><button type="button" class="btn btn-outline btn-sm" id="flt-cal-reset">Quitar rango</button><button type="button" class="btn btn-primary btn-sm" id="flt-cal-apply">Aplicar rango</button></div>' +
+      '</div></div>' +
+      '<button type="button" class="btn btn-outline flt-clear" id="flt-clear">↺ Limpiar filtros</button>' +
+      '</div></div>' +
+      '<div class="filter-results">' + esc(opts.results) + '</div>' +
+      '</div>';
+  }
+
+  // Ajusta pager.page al rango válido y devuelve la porción de la lista a mostrar
+  function paginate(list, pager) {
+    var pages = Math.max(1, Math.ceil(list.length / pager.size));
+    pager.page = Math.min(Math.max(1, pager.page), pages);
+    var start = (pager.page - 1) * pager.size;
+    return list.slice(start, start + pager.size);
+  }
+
+  function renderPagination(total, pager, noun) {
+    var size = pager.size;
+    var pages = Math.max(1, Math.ceil(total / size));
+    var page = pager.page;
+    var start = (page - 1) * size;
+    var info = total ? 'Mostrando <strong>' + (start + 1) + '–' + Math.min(start + size, total) + '</strong> de <strong>' + total + '</strong> ' + noun : 'Mostrando 0 de 0 ' + noun;
+    var sizeOpts = [5, 10, 20].map(function (n) {
+      return '<option value="' + n + '"' + (n === size ? ' selected' : '') + '>' + n + '</option>';
+    }).join('');
+    var btns = '<button type="button" class="pager" data-page="' + (page - 1) + '" aria-label="Página anterior"' + (page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      btns += '<button type="button" class="pager' + (i === page ? ' is-active' : '') + '" data-page="' + i + '"' + (i === page ? ' aria-current="page"' : '') + '>' + i + '</button>';
+    }
+    btns += '<button type="button" class="pager" data-page="' + (page + 1) + '" aria-label="Página siguiente"' + (page === pages ? ' disabled' : '') + '>›</button>';
+    return '<div class="filter-pagination">' +
+      '<label class="page-size" for="flt-page-size">Filas por página <select id="flt-page-size">' + sizeOpts + '</select></label>' +
+      '<span class="pagination-info" aria-live="polite">' + info + '</span>' +
+      '<nav class="page-controls" aria-label="Paginación">' + btns + '</nav>' +
+      '</div>';
+  }
+
+  // Conecta segmentos, calendario, limpiar filtros y paginación. filters y pager se mutan en sitio.
+  function attachFilterToolbar(root, filters, pager) {
+    function refresh() { Shell.refreshCurrent(); }
+
+    UI.on('.flt-segment', 'click', function () {
+      filters.estado = this.getAttribute('data-estado');
+      pager.page = 1;
+      refresh();
+    }, root);
+
+    var trigger = $('#flt-date-trigger', root);
+    var panel = $('#flt-cal', root);
+    var cal = filterCal;
+
+    function renderCalendar() {
+      $('#flt-cal-month', root).textContent = MONTHS_ES[cal.month] + ' ' + cal.year;
+      $('#flt-cal-summary', root).textContent = cal.draftFrom && cal.draftTo
+        ? isoToDisplay(cal.draftFrom) + ' – ' + isoToDisplay(cal.draftTo)
+        : cal.draftFrom ? 'Desde ' + isoToDisplay(cal.draftFrom) + ' · Elige fin' : 'Selecciona una fecha de inicio';
+      $('#flt-cal-hint', root).textContent = cal.draftFrom && !cal.draftTo
+        ? 'Ahora selecciona el último día del rango.'
+        : 'Selecciona el primer día y luego el último.';
+      var first = new Date(cal.year, cal.month, 1).getDay();
+      var days = new Date(cal.year, cal.month + 1, 0).getDate();
+      var today = isoLocal(new Date());
+      var html = new Array(first + 1).join('<span></span>');
+      for (var i = 1; i <= days; i++) {
+        var d = cal.year + '-' + String(cal.month + 1).padStart(2, '0') + '-' + String(i).padStart(2, '0');
+        var cls = [];
+        if (cal.draftFrom && cal.draftTo && d > cal.draftFrom && d < cal.draftTo) cls.push('in-range');
+        if (d === cal.draftFrom) cls.push('range-start');
+        if (d === cal.draftTo) cls.push('range-end');
+        if (d === today) cls.push('today');
+        html += '<button type="button" class="' + cls.join(' ') + '" data-day="' + d + '" aria-label="' + isoToDisplay(d) + '" aria-pressed="' + (d === cal.draftFrom || d === cal.draftTo) + '">' + i + '</button>';
+      }
+      $('#flt-cal-days', root).innerHTML = html;
+    }
+    function shiftMonth(n) {
+      var d = new Date(cal.year, cal.month + n, 1);
+      cal.year = d.getFullYear(); cal.month = d.getMonth();
+      renderCalendar();
+    }
+
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      panel.hidden = !panel.hidden;
+      trigger.setAttribute('aria-expanded', String(!panel.hidden));
+      if (!panel.hidden) {
+        cal.draftFrom = filters.desde;
+        cal.draftTo = filters.hasta;
+        var ref = filters.desde || isoLocal(new Date());
+        cal.year = Number(ref.slice(0, 4)); cal.month = Number(ref.slice(5, 7)) - 1;
+        renderCalendar();
+      }
+    });
+    panel.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var day = e.target.closest('[data-day]');
+      if (!day) return;
+      var d = day.getAttribute('data-day');
+      if (!cal.draftFrom || cal.draftTo) { cal.draftFrom = d; cal.draftTo = ''; }
+      else if (d < cal.draftFrom) { cal.draftTo = cal.draftFrom; cal.draftFrom = d; }
+      else { cal.draftTo = d; }
+      renderCalendar();
+    });
+    $('#flt-cal-prev', root).addEventListener('click', function () { shiftMonth(-1); });
+    $('#flt-cal-next', root).addEventListener('click', function () { shiftMonth(1); });
+    UI.on('[data-period]', 'click', function () {
+      var end = new Date(), start = new Date(end);
+      var p = this.getAttribute('data-period');
+      if (p === 'week') start.setDate(start.getDate() - 6);
+      if (p === 'month') start.setDate(start.getDate() - 29);
+      cal.draftFrom = isoLocal(start); cal.draftTo = isoLocal(end);
+      cal.year = end.getFullYear(); cal.month = end.getMonth();
+      renderCalendar();
+    }, panel);
+    $('#flt-cal-apply', root).addEventListener('click', function () {
+      if (cal.draftFrom && !cal.draftTo) cal.draftTo = cal.draftFrom;
+      filters.desde = cal.draftFrom;
+      filters.hasta = cal.draftTo;
+      pager.page = 1;
+      refresh();
+    });
+    $('#flt-cal-reset', root).addEventListener('click', function () {
+      filters.desde = ''; filters.hasta = '';
+      pager.page = 1;
+      refresh();
+    });
+    // Cierre al hacer clic fuera o con Escape (se registra una sola vez)
+    if (!attachFilterToolbar.globalBound) {
+      attachFilterToolbar.globalBound = true;
+      var closeIfOpen = function () {
+        var p = document.getElementById('flt-cal');
+        if (p && !p.hidden) { p.hidden = true; document.getElementById('flt-date-trigger').setAttribute('aria-expanded', 'false'); }
+      };
+      document.addEventListener('click', closeIfOpen);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeIfOpen(); });
+    }
+
+    $('#flt-clear', root).addEventListener('click', function () {
+      filters.estado = ''; filters.desde = ''; filters.hasta = '';
+      pager.page = 1;
+      refresh();
+    });
+
+    $('#flt-page-size', root).addEventListener('change', function () {
+      pager.size = Number(this.value);
+      pager.page = 1;
+      refresh();
+    });
+    UI.on('.pager', 'click', function () {
+      if (this.disabled) return;
+      pager.page = Number(this.getAttribute('data-page'));
+      refresh();
+    }, root);
+  }
+
+  var tabletPager = { page: 1, size: 5 };
+  var TABLET_SEGMENTS = [
+    { id: '', label: 'Todos', dot: '' },
+    { id: 'ocupado', label: 'Ocupado', dot: 'info' },
+    { id: 'sin_asociar', label: 'Sin asociar', dot: 'warning' },
+    { id: 'mantenimiento', label: 'En mantenimiento', dot: 'danger' }
+  ];
+
+  function tabletEstado(t) {
+    return (t.status === 'ocupada') ? 'ocupado' : (t.status === 'danada') ? 'mantenimiento' : t.status;
+  }
+
+  function tabletMatchesDates(t) {
+    return isoInRange(tabletDateIso(t.since), tabletFilters);
+  }
+
+  function tabletMatchesFilters(t) {
+    if (tabletFilters.estado && tabletEstado(t) !== tabletFilters.estado) return false;
+    return tabletMatchesDates(t);
+  }
+
+  function renderTablets(root) {
+    // Los contadores respetan el rango de fechas aplicado
+    var inRange = S.tablets.filter(tabletMatchesDates);
+    var total = S.tablets.filter(tabletMatchesFilters).length;
+
+    root.innerHTML =
+      '<div class="card filter-card">' +
+      renderFilterToolbar({
+        title: 'Dispositivos registrados',
+        subtitle: 'Filtra por estado y fecha de enrolamiento',
+        ctaId: 'btn-enroll',
+        ctaLabel: 'Enrolar tablet',
+        filters: tabletFilters,
+        dateLabel: 'Fecha de enrolamiento',
+        results: total + ' de ' + S.tablets.length + ' dispositivos',
+        segments: TABLET_SEGMENTS.map(function (s) {
+          return { id: s.id, label: s.label, dot: s.dot, count: s.id ? inRange.filter(function (t) { return tabletEstado(t) === s.id; }).length : inRange.length };
+        })
+      }) +
+      '<div class="card__body" id="tablets-table-body" style="padding:0;">' + renderTabletsTable() + '</div>' +
+      renderPagination(total, tabletPager, 'tablets') +
+      '</div>';
+
+    attachTabletsHandlers(root);
+  }
+
+  function renderTabletsTable() {
+    var list = S.tablets.filter(tabletMatchesFilters);
+    if (!list.length) {
+      tabletPager.page = 1;
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay tablets que coincidan con los filtros seleccionados.</div>';
+    }
+    list = paginate(list, tabletPager);
+    var rows = list.map(function (t) {
+      var primaryAction = '';
+      if (t.camion) {
+        primaryAction = '<button class="btn btn-table-danger btn-sm js-deassoc" data-id="' + t.id + '">Desasociar</button>';
+      } else if (t.clas === 'fija' && !t.camion) {
+        primaryAction = '<button class="btn btn-outline btn-sm js-assoc" data-id="' + t.id + '">Asociar camión</button>';
+      } else if (t.clas === 'repuesto' && !t.camion) {
+        primaryAction = '<button class="btn btn-outline btn-sm js-repuesto" data-id="' + t.id + '">Asignar como repuesto</button>';
+      }
+
+      var primarySlot = primaryAction
+        ? '<div class="row-action-slot">' + primaryAction + '</div>'
+        : '<div class="row-action-slot row-action-slot--empty"><span class="action-dash" title="Sin acción operativa asignada">—</span></div>';
+
+      var camionDisplay = t.camion;
+      if (!camionDisplay && t.clas === 'pool') {
+        var est = S.estadias.find(function (x) { return x.tabletId === t.id && x.estado === 'activa'; });
+        if (est) {
+          camionDisplay = est.placa;
+          t.camion = est.placa;
+        }
+      }
+
+      var canReclasificar = (t.status === 'sin_asociar' && !t.camion && !camionDisplay);
+      var reclasTitle = 'Cambiar clasificación';
+      var disabledAttr = '';
+      if (!canReclasificar) {
+        disabledAttr = ' disabled';
+        if (t.status === 'mantenimiento' || t.status === 'danada') {
+          reclasTitle = 'Debe reparar y desasociar la tablet antes de cambiar su clasificación';
+        } else {
+          reclasTitle = 'Debe desasociar la tablet antes de cambiar su clasificación';
+        }
+      }
+
+      var editBtn = '<div class="row-action-slot"><button class="btn btn-subtle-clas js-edit-clas" data-id="' + t.id + '"' + disabledAttr + ' title="' + esc(reclasTitle) + '">' +
+        ICON.edit + '<span>Editar</span></button></div>';
+
+      return '<tr>' +
+        '<td><strong>' + t.id + '</strong><br><span class="muted" style="color:var(--gray-500);font-size:14px;">' + esc(t.code || t.id) + '</span></td>' +
+        '<td>' + esc(CLAS_LABEL[t.clas]) + '</td>' +
+        '<td class="text-center">' + (camionDisplay ? esc(camionDisplay) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td class="text-center">' + (STATUS_BADGE[t.status] || t.status) + '</td>' +
+        '<td class="text-center muted" style="color:var(--gray-500);">' + esc(t.since) + '</td>' +
+        '<td class="text-center"><div class="row-actions row-actions--tablets">' + primarySlot + editBtn + '</div></td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+      '<th>Dispositivo</th><th>Clasificación</th><th class="text-center">Patente</th><th class="text-center">Estado</th><th class="text-center">Enrolada</th><th class="th-actions text-center">Acciones</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function openChangeClasModal(t) {
+    var clasOptions = [
+      { id: 'fija', label: 'Camión propio' },
+      { id: 'pool', label: 'Pool de terceros' },
+      { id: 'repuesto', label: 'Repuesto' }
+    ];
+    var optionsHtml = clasOptions.map(function (opt) {
+      return '<option value="' + opt.id + '"' + (opt.id === t.clas ? ' selected' : '') + '>' + opt.label + (opt.id === t.clas ? ' (actual)' : '') + '</option>';
+    }).join('');
+
+    var infoBanner =
+      '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:14px;">' +
+      '<div>' +
+      '<div style="font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Clasificación actual</div>' +
+      '<div style="font-size:15.5px;font-weight:600;color:var(--navy-900);margin-top:2px;">' + esc(CLAS_LABEL[t.clas]) + '</div>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+      '<div style="font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--gray-500);text-transform:uppercase;">Estado operativo</div>' +
+      '<div style="margin-top:2px;">' + (STATUS_BADGE[t.status] || t.status) + '</div>' +
+      '</div>' +
+      '</div>';
+
+    var truckNotice = '';
+    if (t.camion) {
+      truckNotice =
+        '<div style="font-size:14.5px;color:var(--navy-800);background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">' +
+        ICON.truck +
+        '<span>Actualmente vinculada al camión propio <strong>' + esc(t.camion) + '</strong>.</span>' +
+        '</div>';
+    }
+
+    var busyNotice = '';
+    if (t.status === 'ocupada' || t.status === 'ocupado') {
+      busyNotice =
+        '<div class="pin-warning-box" style="margin-bottom:14px;">' +
+        ICON.warn +
+        '<div><strong>Dispositivo en uso</strong><p>Esta tablet se encuentra actualmente ocupada en una operación activa. Al cambiar su clasificación, se desvinculará de su asignación actual.</p></div>' +
+        '</div>';
+    }
+
+    var html =
+      infoBanner +
+      truckNotice +
+      busyNotice +
+      '<div class="form-grid" style="grid-template-columns:1fr;">' +
+      '<div>' +
+      '<label class="form-label" for="f-new-clas">Nueva clasificación</label>' +
+      '<select class="plain" id="f-new-clas">' + optionsHtml + '</select>' +
+      '</div>' +
+      '</div>' +
+      '<div id="clas-feedback-box" style="margin-top:12px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14.5px;line-height:1.45;color:var(--gray-600);">' +
+      '</div>';
+
+    var overlay = confirmDialog({
+      title: 'Cambiar clasificación de tablet',
+      subtitle: t.id + ' · ' + (t.code || t.id),
+      body: html,
+      confirmLabel: 'Guardar cambios'
+    }, function () {
+      var selectEl = $('#f-new-clas', overlay);
+      if (!selectEl) return;
+      var newClas = selectEl.value;
+
+      if (newClas === t.clas) {
+        toast('La clasificación se mantiene como ' + CLAS_LABEL[t.clas] + '.', 'info');
+        return;
+      }
+
+      var oldClas = t.clas;
+      var prevCamion = t.camion;
+
+      // Desvincular camión si lo tenía asignado
+      if (t.camion) {
+        t.camion = null;
+      }
+
+      // Si era tablet del pool asignada a una estadía activa de Garita, desvincularla de la estadía
+      if (oldClas === 'pool') {
+        var activeEst = S.estadias.find(function (e) { return e.tabletId === t.id && e.estado === 'activa'; });
+        if (activeEst) activeEst.tabletId = null;
+      }
+
+      // Asignar nueva clasificación y estado correspondiente
+      t.clas = newClas;
+      t.status = 'sin_asociar';
+
+      // Registro en historial de tablets y actividad
+      var det = t.id + ' (' + (t.code || t.id) + ') reclasificada de ' + CLAS_LABEL[oldClas] + ' a ' + CLAS_LABEL[newClas];
+      if (prevCamion) {
+        det += ' · desasociada de ' + prevCamion;
+      }
+      if (S.tabletHistory) {
+        S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+      }
+      S.addActivity('Reclasificación tablet', det, 'ok');
+      S.enqueueSync('Reclasificación tablet', t.id);
+
+      toast('Tablet ' + t.id + ' reclasificada como ' + CLAS_LABEL[newClas] + '.', 'success');
+      Shell.refreshCurrent();
+    });
+
+    var selectEl = $('#f-new-clas', overlay);
+    var feedbackBox = $('#clas-feedback-box', overlay);
+    if (selectEl && feedbackBox) {
+      function updateFeedback() {
+        var val = selectEl.value;
+        if (val === t.clas) {
+          feedbackBox.innerHTML = '<span style="color:var(--gray-500);">Sin cambios: se conserva la clasificación actual (<strong>' + esc(CLAS_LABEL[t.clas]) + '</strong>).</span>';
+          return;
+        }
+        var msg = '';
+        var disassocWarning = t.camion ? '<br><span style="color:#b45309;font-weight:600;">⚠ Se desasociará automáticamente del camión ' + esc(t.camion) + '.</span>' : '';
+        if (val === 'fija') {
+          msg = '<strong style="color:var(--navy-900);">Camión propio:</strong> El dispositivo quedará configurado para operar fijo en un volquete de la compañía. Su estado pasará a <em>Sin asociar</em> hasta vincularlo a una patente.' + disassocWarning;
+        } else if (val === 'pool') {
+          msg = '<strong style="color:var(--navy-900);">Pool de terceros:</strong> El dispositivo se integrará al pool de Garita para asignarse temporalmente a transportistas terceros durante su estadía.' + disassocWarning;
+        } else if (val === 'repuesto') {
+          msg = '<strong style="color:var(--navy-900);">Repuesto:</strong> El dispositivo pasará a reserva de contingencia para sustituir tablets que entren en mantenimiento o falla operativa.' + disassocWarning;
+        }
+        feedbackBox.innerHTML = msg;
+      }
+      selectEl.addEventListener('change', updateFeedback);
+      updateFeedback();
+    }
+  }
+
+  function attachTabletsHandlers(root) {
+    $('#btn-enroll', root).addEventListener('click', function () {
+      var nextDevId = S.genTabletId();
+      var html = '<div class="form-grid">' +
+        fieldTxt('Identificador único', 'f-devid', '', nextDevId) +
+        fieldTxt('Código visible', 'f-code', 'Ej. TAB-31') +
+        fieldSel('Clasificación', 'f-clas', '<option value="fija">Camión propio</option><option value="pool">Pool de terceros</option><option value="repuesto">Repuesto</option>') +
+        '</div>';
+      confirmDialog({ title: 'Enrolar tablet', body: html, confirmLabel: 'Enrolar' }, function () {
+        var clas = $('#f-clas').value;
+        var devId = ($('#f-devid').value || '').trim();
+        if (!devId) {
+          toast('El identificador único no puede estar vacío.', 'error');
+          return;
+        }
+        if (S.tablets.some(function (t) { return t.id === devId; })) {
+          toast('El identificador ' + devId + ' ya está registrado en el parque de tablets.', 'error');
+          return;
+        }
+        var code = ($('#f-code').value || '').trim() || devId;
+        var t = {
+          id: devId,
+          code: code,
+          clas: clas,
+          camion: null,
+          status: 'sin_asociar',
+          since: S.todayStr ? S.todayStr() : '23/09/2026'
+        };
+        S.tablets.push(t);
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: t.id + ' (' + t.code + ') enrolada como ' + CLAS_LABEL[clas], usuario: S.users.admin.name });
+        toast('Tablet ' + t.id + ' enrolada correctamente.', 'success');
+        Shell.refreshCurrent();
+      });
+    });
+
+    UI.on('.js-assoc', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var html = '<div class="form-grid">' + fieldTxt('Patente', 'f-camion', 'Ej. V-108') + '</div>';
+      confirmDialog({ title: 'Asociar tablet a camión', subtitle: id, body: html, confirmLabel: 'Asociar' }, function () {
+        var placa = ($('#f-camion').value || '').trim().toUpperCase();
+        if (!placa) { toast('Ingresa la patente del camión.', 'error'); return; }
+        if (S.tabletFor(placa)) { toast('La patente ' + placa + ' ya cuenta con una tablet fija asociada.', 'error'); return; }
+        var t = S.tablets.find(function (x) { return x.id === id; });
+        t.camion = placa;
+        t.status = 'ocupado';
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: id + ' asociada de forma fija a ' + t.camion, usuario: S.users.admin.name });
+        toast('Asociación creada correctamente.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-deassoc', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var t = S.tablets.find(function (x) { return x.id === id; });
+      if (!t) return;
+
+      var isMantenimiento = (t.status === 'mantenimiento' || t.status === 'danada');
+      var camion = t.camion || '';
+
+      var modalTitle = isMantenimiento ? 'Desasociar tablet en mantenimiento' : 'Desasociar tablet';
+      var modalSubtitle = id + (camion ? ' · ' + camion : '');
+
+      var modalBody = isMantenimiento
+        ? '<div style="display:flex;flex-direction:column;gap:12px;">' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-sm);padding:12px 14px;font-size:15px;color:#1e40af;line-height:1.45;">' +
+          'Al continuar, se confirmará que la tablet ya fue reparada y se encuentra operativa.' +
+          '</div>' +
+          '<p style="font-size:15.5px;color:var(--gray-700);margin:0;line-height:1.55;">' +
+          (camion
+            ? 'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.'
+            : 'La tablet <strong>' + esc(id) + '</strong> cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.') +
+          '</p>' +
+          '</div>'
+        : '<p style="font-size:15.5px;color:var(--gray-700);line-height:1.55;">' +
+          'La tablet <strong>' + esc(id) + '</strong> se desvinculará del camión <strong>' + esc(camion) + '</strong> y cambiará automáticamente al estado <strong>Sin asociar</strong>, quedando disponible para ser asignada nuevamente a un camión.' +
+          '</p>';
+
+      confirmDialog({
+        title: modalTitle,
+        subtitle: modalSubtitle,
+        body: modalBody,
+        danger: true,
+        confirmLabel: 'Desasociar'
+      }, function () {
+        var prevCamion = t.camion;
+        t.camion = null;
+        t.status = 'sin_asociar';
+
+        if (t.clas === 'pool') {
+          var est = S.estadias.find(function (e) { return e.tabletId === t.id && e.estado === 'activa'; });
+          if (est) est.tabletId = null;
+        }
+
+        var detalle = isMantenimiento
+          ? id + ' (' + (t.code || id) + ') reparada y desasociada de ' + prevCamion + ' · Estado: Sin asociar'
+          : id + ' (' + (t.code || id) + ') desasociada de ' + prevCamion + ' · Estado: Sin asociar';
+
+        if (S.tabletHistory) {
+          S.tabletHistory.unshift({ ts: S.nowStr(), detalle: detalle, usuario: S.users.admin.name });
+        }
+        S.addActivity('Tablet desasociada', detalle, 'ok');
+        S.enqueueSync('Desasociación tablet', id);
+
+        var toastMsg = isMantenimiento
+          ? 'Tablet ' + id + ' reparada y desasociada. Queda en estado Sin asociar.'
+          : 'Tablet ' + id + ' desasociada correctamente.';
+        toast(toastMsg, 'info');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-repuesto', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var afectables = S.camionesPropios.filter(function (c) {
+        return S.tablets.some(function (t) {
+          return t.camion === c && (t.status === 'ocupado' || t.status === 'ocupada');
+        });
+      });
+      if (afectables.length === 0) {
+        toast('No hay camiones propios con tablet activa para aplicar contingencia.', 'error');
+        return;
+      }
+      var html = '<div class="form-grid">' + fieldSel('Camión propio afectado', 'f-camion-rep', optionList(afectables)) + '</div>' +
+        '<div id="repuesto-info-box" style="margin-top:10px;padding:11px 13px;background:#f8fafc;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14.5px;line-height:1.45;color:var(--gray-600);"></div>';
+
+      var overlay = confirmDialog({ title: 'Asignar tablet de repuesto', subtitle: id, body: html, confirmLabel: 'Asignar' }, function () {
+        var camion = $('#f-camion-rep', overlay).value;
+
+        // La tablet que actualmente está activa y operando para ese camión pasa a mantenimiento
+        var tabletActiva = S.tablets.find(function (x) {
+          return x.camion === camion && (x.status === 'ocupado' || x.status === 'ocupada');
+        });
+        if (tabletActiva) {
+          tabletActiva.status = 'mantenimiento';
+        }
+
+        var rep = S.tablets.find(function (x) { return x.id === id; });
+        rep.status = 'ocupado';
+        rep.camion = camion;
+
+        var det = id + ' asignada como repuesto a ' + camion + ' (contingencia)';
+        if (tabletActiva) {
+          det += ' · ' + tabletActiva.id + ' pasó a En mantenimiento';
+        }
+        if (S.tabletHistory) {
+          S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+        }
+        S.addActivity('Repuesto asignado', det, 'ok');
+        S.enqueueSync('Asignación repuesto', id);
+
+        toast('Tablet de repuesto ' + id + ' asignada a ' + camion + '.', 'success');
+        Shell.refreshCurrent();
+      });
+
+      var sel = $('#f-camion-rep', overlay);
+      var infoBox = $('#repuesto-info-box', overlay);
+      if (sel && infoBox) {
+        function updateRepInfo() {
+          var c = sel.value;
+          var act = S.tablets.find(function (x) { return x.camion === c && (x.status === 'ocupado' || x.status === 'ocupada'); });
+          var enMant = S.tablets.filter(function (x) { return x.camion === c && (x.status === 'mantenimiento' || x.status === 'danada'); });
+          var txt = '';
+          if (act) {
+            txt += '<span style="color:var(--navy-900);font-weight:600;">Tablet activa a sustituir:</span> ' + act.id + ' (' + (act.code || act.id) + ') · Pasará a <strong>En mantenimiento</strong>.';
+          }
+          if (enMant.length > 0) {
+            var ids = enMant.map(function (m) { return m.id; }).join(', ');
+            txt += '<br><span style="color:var(--gray-500);font-size:14px;">Historial del camión: ' + ids + ' ya en mantenimiento (se conservan para trazabilidad).</span>';
+          }
+          infoBox.innerHTML = txt;
+        }
+        sel.addEventListener('change', updateRepInfo);
+        updateRepInfo();
+      }
+    }, root);
+
+    UI.on('.js-edit-clas', 'click', function () {
+      if (this.disabled) return;
+      var id = this.getAttribute('data-id');
+      var t = S.tablets.find(function (x) { return x.id === id; });
+      if (!t) return;
+      if (t.status !== 'sin_asociar' || t.camion) {
+        toast('Solo se puede editar una tablet cuando está en estado Sin asociar.', 'error');
+        return;
+      }
+      openEditTabletModal(t);
+    }, root);
+
+    attachFilterToolbar(root, tabletFilters, tabletPager);
+  }
+
+  function openEditTabletModal(t) {
+    var clasOpts = ['fija', 'pool', 'repuesto'].map(function (c) {
+      return '<option value="' + c + '"' + (c === t.clas ? ' selected' : '') + '>' + CLAS_LABEL[c] + '</option>';
+    }).join('');
+    var html = '<div class="form-grid">' +
+      fieldTxt('Identificador único', 'f-devid', '', t.id) +
+      fieldTxt('Código visible', 'f-code', 'Ej. TAB-31', t.code) +
+      fieldSel('Clasificación', 'f-clas', clasOpts) +
+      '</div>';
+    var overlay = confirmDialog({ title: 'Editar tablet', subtitle: t.id + ' · ' + (t.code || t.id), body: html, confirmLabel: 'Guardar cambios' }, function () {
+      var devId = ($('#f-devid', overlay).value || '').trim();
+      var code = ($('#f-code', overlay).value || '').trim() || devId;
+      var clas = $('#f-clas', overlay).value;
+      if (!devId) {
+        toast('El identificador único no puede estar vacío.', 'error');
+        return;
+      }
+      if (devId !== t.id && S.tablets.some(function (x) { return x.id === devId; })) {
+        toast('El identificador ' + devId + ' ya está registrado en el parque de tablets.', 'error');
+        return;
+      }
+      if (devId === t.id && code === t.code && clas === t.clas) {
+        toast('No se realizaron cambios.', 'info');
+        return;
+      }
+      var cambios = [];
+      if (devId !== t.id) cambios.push('ID ' + t.id + ' → ' + devId);
+      if (code !== t.code) cambios.push('código ' + (t.code || '—') + ' → ' + code);
+      if (clas !== t.clas) cambios.push('clasificación ' + CLAS_LABEL[t.clas] + ' → ' + CLAS_LABEL[clas]);
+      var oldId = t.id;
+      t.id = devId;
+      t.code = code;
+      t.clas = clas;
+      var det = oldId + ' editada: ' + cambios.join(' · ');
+      if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: det, usuario: S.users.admin.name });
+      S.addActivity('Edición tablet', det, 'ok');
+      S.enqueueSync('Edición tablet', t.id);
+      toast('Tablet ' + t.id + ' actualizada correctamente.', 'success');
+      Shell.refreshCurrent();
+    });
+  }
+
+  /* =======================================================================
+     MÓDULO 4 · GARITA
+     ======================================================================= */
+  var garitaFilters = { estado: '', desde: '', hasta: '' };
+  var garitaPager = { page: 1, size: 5 };
+  var GARITA_SEGMENTS = [
+    { id: '', label: 'Todas', dot: '' },
+    { id: 'activa', label: 'Activa', dot: 'info' },
+    { id: 'mantenimiento', label: 'En mantenimiento', dot: 'danger' },
+    { id: 'cerrada', label: 'Cerrada', dot: 'success' }
+  ];
+  var ESTADIA_ESTADO = {
+    activa: { label: 'Activa', badge: 'badge-info' },
+    mantenimiento: { label: 'En mantenimiento', badge: 'badge-danger' },
+    cerrada: { label: 'Cerrada', badge: 'badge-success' }
+  };
+  function estadiaBadge(e) {
+    var st = ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa;
+    return '<span class="badge ' + st.badge + '">' + st.label + '</span>';
+  }
+
+  // Fecha de ingreso en yyyy-mm-dd (ingresoEn solo guarda dd/mm hh:mm)
+  function estadiaDateIso(e) {
+    if (e.ingresoIso) return e.ingresoIso;
+    var m = String(e.ingresoEn || '').match(/^(\d{2})\/(\d{2})/);
+    return m ? new Date().getFullYear() + '-' + m[2] + '-' + m[1] : '';
+  }
+  function estadiaMatchesDates(e) {
+    return isoInRange(estadiaDateIso(e), garitaFilters);
+  }
+  function estadiaMatchesFilters(e) {
+    if (garitaFilters.estado && e.estado !== garitaFilters.estado) return false;
+    return estadiaMatchesDates(e);
+  }
+
+  function renderGarita(root) {
+    var inRange = S.estadias.filter(estadiaMatchesDates);
+    var total = S.estadias.filter(estadiaMatchesFilters).length;
+
+    root.innerHTML =
+      '<div class="card filter-card">' +
+      renderFilterToolbar({
+        title: 'Estadías de terceros',
+        subtitle: 'Filtra por estado y fecha de ingreso',
+        ctaId: 'btn-new-entry',
+        ctaLabel: 'Registrar ingreso',
+        filters: garitaFilters,
+        dateLabel: 'Fecha de ingreso',
+        results: total + ' de ' + S.estadias.length + ' estadías',
+        segments: GARITA_SEGMENTS.map(function (s) {
+          return { id: s.id, label: s.label, dot: s.dot, count: s.id ? inRange.filter(function (e) { return e.estado === s.id; }).length : inRange.length };
+        })
+      }) +
+      '<div class="card__body" style="padding:0;">' + renderEstadiasTable() + '</div>' +
+      renderPagination(total, garitaPager, 'estadías') +
+      '</div>';
+    attachGaritaHandlers(root);
+  }
+
+  function renderEstadiasTable() {
+    if (S.estadias.length === 0) {
+      garitaPager.page = 1;
+      return '<div class="empty-state">' + ICON.empty + '<p>No hay vehículos de terceros registrados todavía.</p></div>';
+    }
+    var lista = S.estadias.filter(estadiaMatchesFilters);
+    if (lista.length === 0) {
+      garitaPager.page = 1;
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay estadías que coincidan con los filtros seleccionados.</div>';
+    }
+    var rows = paginate(lista, garitaPager).map(function (e) {
+      var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+      var tabletCell = tablet ? '<span class="badge badge-neutral">' + esc(tablet.code || tablet.id) + '</span>' : (e.estado === 'cerrada' ? '<span class="tablet-empty">Sin tablet</span>' : '<button class="btn btn-outline btn-sm js-assign-tablet" data-id="' + e.id + '">Asignar tablet</button>');
+      var cerrada = e.estado === 'cerrada';
+
+      // Acción primaria según el estado de la estadía
+      var primary;
+      if (e.estado === 'activa') {
+        primary = '<button class="btn btn-outline btn-sm row-primary js-exit" data-id="' + e.id + '"' +
+          (!tablet ? ' disabled title="Asigna una tablet primero (columna Tablet)"' : '') + '>Registrar salida</button>';
+      } else if (e.estado === 'mantenimiento') {
+        primary = '<button class="btn btn-outline btn-sm row-primary js-reactivar" data-id="' + e.id + '">Reactivar</button>';
+      } else {
+        primary = '<span class="row-primary row-primary--empty" title="Estadía cerrada · sin acciones pendientes">—</span>';
+      }
+
+      // Acciones secundarias en menú ⋮
+      var menuItems = '<button type="button" role="menuitem" class="row-menu__item js-show-pin" data-id="' + e.id + '">' + ICON.lock + '<span>Mostrar PIN</span></button>' +
+        '<button type="button" role="menuitem" class="row-menu__item js-estadia-edit" data-id="' + e.id + '"' +
+        (cerrada ? ' disabled title="La estadía está cerrada y ya no se puede editar"' : '') + '>' + ICON.edit + '<span>Editar</span></button>';
+      if (e.estado === 'mantenimiento') {
+        menuItems += '<button type="button" role="menuitem" class="row-menu__item js-exit" data-id="' + e.id + '"' +
+          (!tablet ? ' disabled title="Asigna una tablet primero"' : '') + '>' + ICON.logout + '<span>Registrar salida</span></button>';
+      }
+      var overflow = '<div class="row-menu">' +
+        '<button type="button" class="row-menu__toggle js-row-menu" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones" title="Más acciones">' + ICON.dots + '</button>' +
+        '<div class="row-menu__panel" role="menu" hidden>' + menuItems + '</div>' +
+        '</div>';
+      return '<tr>' +
+        '<td><strong>' + esc(e.placa) + '</strong></td>' +
+        '<td>' + esc(e.empresa) + '</td>' +
+        '<td>' + esc(e.conductor) + '</td>' +
+        '<td>' + esc(e.documento || '—') + '</td>' +
+        '<td class="text-center">' + tabletCell + '</td>' +
+        '<td class="text-center">' + e.viajes.length + '</td>' +
+        '<td class="text-center">' + estadiaBadge(e) + '</td>' +
+        '<td class="text-center muted" style="color:var(--gray-500);">' + esc(e.ingresoEn) + '</td>' +
+        '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle de la estadía">' + ICON.eye + '</button></div></td>' +
+        '<td class="text-center"><div class="row-actions row-actions--garita">' + primary + overflow + '</div></td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
+      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="text-center">Detalle</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function attachGaritaHandlers(root) {
+    $('#btn-new-entry', root).addEventListener('click', function () {
+      var c = S.catalogs;
+      var html = '<div class="form-grid">' +
+        fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros)) +
+        fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros)) +
+        fieldTxt('Patente', 'f-placa', 'Ej. ABC-123') +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456') +
+        fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor') +
+        fieldTxt('Documento', 'f-documento', 'DNI o N° de documento') +
+        fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector)) +
+        '</div>';
+      confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
+        var placa = ($('#f-placa').value || 'S/PATENTE').toUpperCase();
+        var pin = String(Math.floor(1000 + Math.random() * 9000));
+        var e = {
+          id: S.genEstadiaId(), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
+          placa: placa, placaSecundaria: ($('#f-placa-sec').value || '').trim().toUpperCase(),
+          conductor: $('#f-conductor').value || 'Sin registrar',
+          documento: $('#f-documento').value || '—',
+          pin: pin,
+          destino: $('#f-destino').value,
+          tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr(), ingresoIso: isoLocal(new Date())
+        };
+        S.estadias.unshift(e);
+        S.enqueueSync('Ingreso de tercero', placa);
+        S.addActivity('Ingreso registrado', placa + ' · ' + e.empresa, 'ok');
+        toast('Estadía registrada para ' + placa + '. PIN de acceso: ' + pin + '.', 'success');
+        Shell.refreshCurrent();
+      });
+    });
+
+    UI.on('.js-assign-tablet', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      var libres = S.poolAvailable();
+      if (libres.length === 0) { toast('No hay tablets sin asociar en el pool de terceros.', 'error'); return; }
+      var html = '<div class="form-grid">' + fieldSel('Tablet del pool', 'f-tablet', optionList(libres.map(function (t) { return t.code || t.id; }))) + '</div>' +
+        '<p class="form-hint" style="margin-top:8px;">Solo se listan tablets clasificadas como pool de terceros y en estado Sin asociar.</p>';
+      confirmDialog({ title: 'Asignar tablet temporal', subtitle: e ? e.placa : '', body: html, confirmLabel: 'Asignar' }, function () {
+        var code = $('#f-tablet').value;
+        var tablet = S.tablets.find(function (t) { return t.code === code || t.id === code; });
+        tablet.status = 'ocupado';
+        tablet.camion = e.placa;
+        e.tabletId = tablet.id;
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet.code || tablet.id) + ' asignada temporalmente a patente ' + e.placa + ' (' + e.id + ')', usuario: S.users.garita.name });
+        S.addActivity('Tablet asignada', (tablet.code || tablet.id) + ' → ' + e.placa, 'ok');
+        toast('Tablet ' + (tablet.code || tablet.id) + ' asignada. El conductor ya puede operar el módulo de Terceros.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-exit', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      var incompleto = e.viajes.find(function (v) { return v.estado !== 'Cerrado'; });
+      if (incompleto) {
+        toast('No se puede cerrar: el viaje ' + incompleto.id + ' está incompleto.', 'error');
+        return;
+      }
+      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
+        e.estado = 'cerrada'; e.salidaEn = S.nowStr();
+        var tablet = S.tablets.find(function (t) { return t.id === e.tabletId; });
+        if (tablet) {
+          tablet.status = 'sin_asociar';
+          tablet.camion = null;
+        }
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet ? tablet.id : '') + ' desasociada automáticamente al cerrar ' + e.id, usuario: 'Sistema' });
+        S.enqueueSync('Salida de tercero', e.placa);
+        S.addActivity('Salida registrada', e.placa + ' · estadía cerrada', 'ok');
+        toast('Salida registrada. Tablet desasociada y devuelta al pool.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-estadia-view', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+      var cerrados = e.viajes.filter(function (v) { return v.estado === 'Cerrado'; }).length;
+      var fields = [
+        ['Estadía', e.id],
+        ['Patente', e.placa],
+        ['Patente secundaria', e.placaSecundaria || '—'],
+        ['Empresa', e.empresa],
+        ['Tipo de carga / material', e.tipoCarga || '—'],
+        ['Conductor', e.conductor],
+        ['Documento', e.documento || '—'],
+        ['Destino / sector', e.destino || '—'],
+        ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
+        ['Ingreso', e.ingresoEn || '—'],
+        ['Salida', e.salidaEn || '—'],
+        ['Estado', (ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa).label],
+        ['Nro. viajes', e.viajes.length + ' (' + cerrados + ' cerrados)']
+      ];
+      var body = fields.map(function (f) {
+        return '<div class="info-row"><span class="label">' + f[0] + '</span><span class="value">' + esc(f[1]) + '</span></div>';
+      }).join('');
+      confirmDialog({ title: 'Detalle de la estadía', subtitle: 'Patente ' + e.placa, body: body, confirmLabel: 'Cerrar' }, function () { });
+      $('.js-modal-cancel').style.display = 'none';
+    }, root);
+
+    UI.on('.js-show-pin', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      if (!e.pin) e.pin = String(Math.floor(1000 + Math.random() * 9000));
+
+      var body =
+        '<div style="display:flex;flex-direction:column;gap:12px;">' +
+        '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(e.conductor) + '</span></div>' +
+        '<div class="info-row"><span class="label">Documento / Usuario</span><span class="value"><strong>' + esc(e.documento || e.placa) + '</strong></span></div>' +
+        '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(e.placa) + '</span></div>' +
+        '<div class="info-row"><span class="label">Empresa</span><span class="value">' + esc(e.empresa) + '</span></div>' +
+
+        '<div class="pin-display-box">' +
+        '<span class="pin-display-label">PIN / Contraseña temporal</span>' +
+        '<span class="pin-display-number">' + e.pin + '</span>' +
+        '<span class="pin-display-hint">Clave de acceso para iniciar sesión en el módulo de Terceros</span>' +
+        '</div>' +
+
+        '<div class="pin-warning-box">' +
+        ICON.warn +
+        '<div>' +
+        '<strong>Cambio obligatorio de contraseña</strong>' +
+        '<p>El conductor debe cambiar esta contraseña temporal inmediatamente después de haber ingresado con ella.</p>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+
+      confirmDialog({
+        title: 'PIN de acceso para terceros',
+        subtitle: 'Patente ' + e.placa + ' · ' + e.conductor,
+        body: body,
+        cancelLabel: 'Cerrar',
+        confirmLabel: 'Copiar PIN'
+      }, function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(e.pin);
+        }
+        toast('PIN ' + e.pin + ' copiado al portapapeles.', 'success');
+      });
+    }, root);
+
+    UI.on('.js-estadia-edit', 'click', function () {
+      if (this.disabled) return;
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e || e.estado === 'cerrada') return;
+      var c = S.catalogs;
+      var html = '<div class="form-grid">' +
+        fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros, e.empresa)) +
+        fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros, e.tipoCarga)) +
+        fieldTxt('Patente', 'f-placa', 'Ej. ABC-123', e.placa) +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456', e.placaSecundaria) +
+        fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor', e.conductor) +
+        fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
+        fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector, e.destino)) +
+        '</div>';
+      confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
+        var placa = ($('#f-placa').value || '').trim().toUpperCase();
+        if (!placa) { toast('La patente no puede estar vacía.', 'error'); return; }
+        e.empresa = $('#f-empresa').value;
+        e.tipoCarga = $('#f-carga').value;
+        e.placa = placa;
+        e.placaSecundaria = ($('#f-placa-sec').value || '').trim().toUpperCase();
+        e.conductor = ($('#f-conductor').value || '').trim() || 'Sin registrar';
+        e.documento = ($('#f-documento').value || '').trim() || '—';
+        e.destino = $('#f-destino').value;
+        // Mantiene la patente visible en la tablet asignada
+        var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+        if (tablet) tablet.camion = placa;
+        var det = e.id + ' · ' + placa + ' editada';
+        S.enqueueSync('Edición de estadía', placa);
+        S.addActivity('Estadía editada', det, 'ok');
+        toast('Estadía de ' + placa + ' actualizada.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    UI.on('.js-reactivar', 'click', function () {
+      var id = this.getAttribute('data-id');
+      var e = S.estadias.find(function (x) { return x.id === id; });
+      if (!e) return;
+      confirmDialog({ title: 'Reactivar estadía', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y la estadía volverá a quedar Activa para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
+        e.estado = 'activa';
+        S.enqueueSync('Reactivación de estadía', e.placa);
+        S.addActivity('Estadía reactivada', e.id + ' · ' + e.placa, 'ok');
+        toast('Estadía de ' + e.placa + ' reactivada.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    // Menú ⋮ de acciones secundarias. Al abrirse, el panel se mueve a <body> con
+    // position:fixed para no quedar recortado por la tabla ni por contenedores animados.
+    UI.on('.js-row-menu', 'click', function (ev) {
+      ev.stopPropagation();
+      var toggle = this;
+      var panel = toggle._panel || (toggle._panel = toggle.nextElementSibling);
+      var wasOpen = !panel.hidden;
+      closeRowMenus();
+      if (wasOpen) return;
+      panel._toggle = toggle;
+      document.body.appendChild(panel);
+      var r = toggle.getBoundingClientRect();
+      panel.hidden = false;
+      var h = panel.offsetHeight, w = panel.offsetWidth;
+      var top = (r.bottom + 6 + h > window.innerHeight) ? r.top - h - 6 : r.bottom + 6;
+      panel.style.top = Math.max(8, top) + 'px';
+      panel.style.left = Math.max(8, r.right - w) + 'px';
+      this.setAttribute('aria-expanded', 'true');
+      this.classList.add('is-open');
+    }, root);
+    UI.on('.row-menu__item', 'click', function () { closeRowMenus(); }, root);
+    if (!attachGaritaHandlers.menuBound) {
+      attachGaritaHandlers.menuBound = true;
+      document.addEventListener('click', closeRowMenus);
+      document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeRowMenus(); });
+      window.addEventListener('resize', closeRowMenus);
+      document.addEventListener('scroll', closeRowMenus, true);
+    }
+
+    attachFilterToolbar(root, garitaFilters, garitaPager);
+  }
+
+  function closeRowMenus() {
+    // Solo los paneles abiertos viven en <body>; se devuelven a su fila o se descartan
+    $all('body > .row-menu__panel').forEach(function (p) {
+      p.hidden = true;
+      var t = p._toggle;
+      if (t && t.isConnected) {
+        t.setAttribute('aria-expanded', 'false');
+        t.classList.remove('is-open');
+        t.parentNode.appendChild(p);
+      } else {
+        p.remove();
+      }
+    });
+  }
+
+  /* =======================================================================
+     MÓDULO 5 · OPERACIÓN DE VOLQUETES DE TERCEROS
+     ======================================================================= */
+  function renderTerceros(root) {
+    // Las estadías más recientes se insertan al inicio (unshift), así que la
+    // primera coincidencia es la última asignación hecha por Garita.
+    var estadia = S.estadias.filter(function (e) { return e.estado === 'activa' && e.tabletId; })[0];
+
+    if (!estadia) {
+      root.innerHTML = '<div class="card"><div class="card__body">' +
+        '<div class="empty-state">' + ICON.empty +
+        '<p>Aún no se te ha asignado una tablet desde Garita. Registra el ingreso del vehículo y asigna una tablet del pool para comenzar.</p></div>' +
+        '</div></div>';
+      return;
+    }
+    var tablet = S.tablets.find(function (t) { return t.id === estadia.tabletId; });
+    var viajeActivo = estadia.viajes.find(function (v) { return v.estado !== 'Cerrado'; });
+
+    root.innerHTML =
+      '<div class="grid-2">' +
+      '<div class="card"><div class="card__head"><div><h3>Detalles del conductor</h3></div></div>' +
+      '<div class="card__body">' +
+      '<div class="info-row"><span class="label">Empresa</span><span class="value">' + esc(estadia.empresa) + '</span></div>' +
+      '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(estadia.placa) + '</span></div>' +
+      '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(estadia.conductor) + '</span></div>' +
+      '<div class="info-row"><span class="label">Documento</span><span class="value">' + esc(estadia.documento || '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Tablet asignada</span><span class="value">' + esc(tablet ? (tablet.code || tablet.id) : '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Destino / sector</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
+      '</div></div>' +
+
+      '<div class="card"><div class="card__head"><div><h3>Viaje en curso</h3><p>Pesaje de entrada → descarga / carga → pesaje de salida</p></div></div>' +
+      '<div class="card__body">' + renderViajeActivo(estadia, viajeActivo) + '</div></div>' +
+      '</div>' +
+
+      '<div class="card"><div class="card__head"><div><h3>Viajes de la estadía</h3></div></div>' +
+      '<div class="card__body" style="padding:0;">' + renderViajesTercerosTable(estadia) + '</div></div>';
+
+    attachTercerosHandlers(root, estadia);
+  }
+
+  // Sentido del viaje: v.sentido indica cómo ingresa el vehículo ('cargado' | 'vacio').
+  // El pesaje de salida siempre es el estado contrario al de entrada.
+  var ESTADO_PESAJE = { cargado: 'Cargado', vacio: 'Vacío' };
+  function estadoSalida(sentido) { return sentido === 'cargado' ? 'vacio' : 'cargado'; }
+  function pesajeConEstado(w, estado) {
+    if (!w || !estado) return weighSummary(w);
+    return weighSummary(w) + ' <span class="badge ' + (estado === 'cargado' ? 'badge-gold' : 'badge-neutral') + '" style="margin-left:4px;">' + ESTADO_PESAJE[estado] + '</span>';
+  }
+
+  function renderViajeActivo(estadia, v) {
+    if (!v && estadia.balanzaFueraServicio) {
+      // Entrada registrada con balanza fuera de servicio: no se registran más pesos, el conductor devuelve la tablet.
+      return '<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:15px;">' +
+        '<strong>Balanza fuera de servicio.</strong> El viaje se cerró con evidencia fotográfica. Devuelve la tablet en Garita para finalizar la estadía.</div>' +
+        '<button class="btn btn-primary btn-block" disabled title="Balanza fuera de servicio · devuelve la tablet en Garita">Iniciar viaje</button>';
+    }
+    if (!v) {
+      return '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
+        '<button class="btn btn-primary btn-block" id="btn-start-trip">Iniciar viaje</button>';
+    }
+    var entradaEst = v.sentido || null;
+    var salidaEst = entradaEst ? estadoSalida(entradaEst) : null;
+    var entrada = entradaEst ? v[entradaEst] : null;
+    var salida = salidaEst ? v[salidaEst] : null;
+    var intermedioLabel = entradaEst === 'vacio' ? 'Carga' : 'Descarga';
+    var step = !entrada ? 'entrada' : !salida ? 'salida' : 'listo';
+    var rows =
+      '<div class="info-row"><span class="label">Viaje</span><span class="value">' + v.id + '</span></div>' +
+      '<div class="info-row"><span class="label">Pesaje de entrada</span><span class="value">' + pesajeConEstado(entrada, entradaEst) + '</span></div>' +
+      '<div class="info-row"><span class="label">' + (entradaEst ? intermedioLabel : 'Descarga / Carga') + '</span><span class="value">' + (v.intermedio ? esc(v.intermedio) : '—') + '</span></div>' +
+      '<div class="info-row"><span class="label">Pesaje de salida</span><span class="value">' + pesajeConEstado(salida, salidaEst) + '</span></div>';
+    var btn = '';
+    if (step === 'entrada') {
+      btn = '<p style="font-size:15px;color:var(--gray-600);margin-bottom:10px;">¿Cómo ingresa el vehículo a la balanza?</p>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+        '<button class="btn btn-gold btn-block js-trip-entrada" data-estado="cargado">Entrada cargado</button>' +
+        '<button class="btn btn-outline btn-block js-trip-entrada" data-estado="vacio">Entrada vacío (tara)</button>' +
+        '</div>';
+    }
+    else if (step === 'salida') btn = '<button class="btn btn-gold btn-block" id="btn-trip-salida">Registrar pesaje de salida (' + ESTADO_PESAJE[salidaEst].toLowerCase() + ')</button>';
+    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:17px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
+    return rows + '<div style="margin-top:12px;">' + btn + '</div>';
+  }
+
+  function renderViajesTercerosTable(estadia) {
+    if (estadia.viajes.length === 0) {
+      return '<div class="empty-state">' + ICON.empty + '<p>Aún no se han registrado viajes en esta estadía.</p></div>';
+    }
+    var rows = estadia.viajes.map(function (v) {
+      var entradaEst = v.sentido || null;
+      var salidaEst = entradaEst ? estadoSalida(entradaEst) : null;
+      return '<tr><td><strong>' + v.id + '</strong></td>' +
+        '<td>' + pesajeConEstado(entradaEst ? v[entradaEst] : null, entradaEst) + '</td>' +
+        '<td>' + pesajeConEstado(salidaEst ? v[salidaEst] : null, salidaEst) + '</td>' +
+        '<td class="num">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td>' + (v.estado === 'Cerrado' ? '<span class="badge badge-success">Cerrado</span>' : '<span class="badge badge-info">En curso</span>') + '</td>' +
+        '<td>' + syncBadge(syncStatusFor(v.id)) + '</td></tr>';
+    }).join('');
+    return '<div class="table-wrap"><table class="data-table"><thead><tr><th>Viaje</th><th>Entrada</th><th>Salida</th><th>Neto</th><th>Estado</th><th>Sync</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function attachTercerosHandlers(root, estadia) {
+    function viajeEnCurso() { return estadia.viajes.find(function (x) { return x.estado !== 'Cerrado'; }); }
+
+    var btnStart = $('#btn-start-trip', root);
+    if (btnStart) btnStart.addEventListener('click', function () {
+      var v = { id: S.genViajeId(), estado: 'en_curso', sentido: null, cargado: null, intermedio: null, vacio: null, neto: null };
+      estadia.viajes.unshift(v);
+      S.addActivity('Viaje iniciado', v.id + ' · ' + estadia.placa, 'ok');
+      toast('Viaje ' + v.id + ' iniciado dentro de la estadía.', 'success');
+      Shell.refreshCurrent();
+    });
+
+    UI.on('.js-trip-entrada', 'click', function () {
+      var estado = this.getAttribute('data-estado');
+      var v = viajeEnCurso();
+      openWeighModal({ title: 'Pesaje de entrada · ' + ESTADO_PESAJE[estado], subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: estado, allowOutOfService: true, hideEstimatedValue: false }, function (res) {
+        res.ts = S.nowStr();
+        v.sentido = estado;
+        v[estado] = res;
+        S.enqueueSync('Pesaje de entrada tercero', v.id);
+        if (res.outOfService) {
+          // Sin balanza no se registra la salida: se cierra el viaje y el conductor devuelve la tablet.
+          v.neto = null;
+          v.estado = 'Cerrado';
+          estadia.balanzaFueraServicio = true;
+          S.addActivity('Viaje cerrado', v.id + ' · balanza fuera de servicio en la entrada (evidencia)', 'ok');
+          toast('Evidencia registrada. Viaje cerrado: devuelve la tablet en Garita.', 'success');
+          Shell.refreshCurrent();
+          return;
+        }
+        toast('Pesaje de entrada (' + ESTADO_PESAJE[estado].toLowerCase() + ') registrado.', 'success');
+        Shell.refreshCurrent();
+      });
+    }, root);
+
+    var btnSalida = $('#btn-trip-salida', root);
+    if (btnSalida) btnSalida.addEventListener('click', function () {
+      var v = viajeEnCurso();
+      var salidaEst = estadoSalida(v.sentido);
+      openWeighModal({ title: 'Pesaje de salida · ' + ESTADO_PESAJE[salidaEst], subtitle: 'Viaje ' + v.id + ' · ' + estadia.placa, kind: salidaEst, allowOutOfService: false, hideEstimatedValue: false }, function (res) {
+        res.ts = S.nowStr();
+        v[salidaEst] = res;
+        v.intermedio = res.ts; // descarga / carga se registra automáticamente con el pesaje de salida
+        var inconsistente = false;
+        if ((v.cargado && v.cargado.outOfService) || (v.vacio && v.vacio.outOfService)) {
+          v.neto = null;
+        } else {
+          var bruto = v.cargado ? v.cargado.value || 0 : 0;
+          var tara = v.vacio ? v.vacio.value || 0 : 0;
+          inconsistente = bruto <= tara;
+          v.neto = Math.max(0, bruto - tara);
+        }
+        v.estado = 'Cerrado';
+        S.enqueueSync('Viaje tercero', v.id);
+        var actDet = v.neto != null ? ' · peso neto ' + v.neto.toLocaleString('es-PE') + ' kg' : ' · balanza fuera de servicio (evidencia)';
+        S.addActivity('Viaje cerrado', v.id + actDet, 'ok');
+        toast('Viaje cerrado.' + (v.neto != null ? ' Peso neto: ' + v.neto.toLocaleString('es-PE') + ' kg.' : ' Registrado con evidencia de balanza fuera de servicio.'), 'success');
+        if (inconsistente) toast('Atención: el peso cargado es menor o igual al peso vacío. Verifica los pesajes.', 'error');
+        Shell.refreshCurrent();
+      });
+    });
+  }
+
+  /* =======================================================================
+     Registro de renderers en el shell
+     ======================================================================= */
+  document.addEventListener('DOMContentLoaded', function () {
+    Shell.registerRenderer('dashboard', renderDashboard);
+    Shell.registerRenderer('misviajes', renderMisViajes);
+    Shell.registerRenderer('tablets', renderTablets);
+    Shell.registerRenderer('garita', renderGarita);
+    Shell.registerRenderer('terceros', renderTerceros);
+  });
+})();
