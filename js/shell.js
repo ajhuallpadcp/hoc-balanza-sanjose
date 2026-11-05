@@ -13,15 +13,17 @@
     garita:  [{ id: 'dashboard', label: 'Panel principal', icon: 'home' },
               { id: 'garita',    label: 'Garita', icon: 'gate' }],
     propio:  [{ id: 'misviajes', label: 'Mis Viajes', icon: 'truck' }],
-    tercero: [{ id: 'terceros',  label: 'Operación de Terceros', icon: 'users' }]
+    tercero: [{ id: 'terceros',  label: 'Operación de Terceros', icon: 'users' }],
+    supervisor: [{ id: 'historial', label: 'Historial de pesajes', icon: 'scale' }]
   };
 
   var TITLES = {
     dashboard: ['Panel principal', 'Control y estado del parque de tablets'],
     misviajes: ['Mis Viajes', 'Volquetes propios · mineral y desmonte'],
     tablets:   ['Administración de Tablets', 'Enrolamiento, clasificación y asociación de dispositivos'],
-    garita:    ['Garita', 'Ingreso, estadía y asignación de tablets a terceros'],
-    terceros:  ['Operación de Volquetes de Terceros', 'Viajes dentro de la estadía asignada']
+    historial: ['Historial de pesajes', 'Tickets de extracción registrados por los conductores propios'],
+    garita:    ['Garita', 'Ingreso, tickets y asignación de tablets a terceros'],
+    terceros:  ['Operación de Volquetes de Terceros', 'Viajes dentro del ticket asignado']
   };
 
   var RENDERERS = {}; // registrado por cada módulo: RENDERERS.dashboard = function(){...}
@@ -76,7 +78,8 @@
     panel.innerHTML = '<div class="sync-panel__head">Cola de sincronización</div>' + rows;
   }
 
-  function navigateTo(screenId) {
+  // opts.refresh = true cuando se vuelve a pintar la misma pantalla (Shell.refreshCurrent)
+  function navigateTo(screenId, opts) {
     var allowed = (NAV[S.role] || []).map(function (item) { return item.id; });
     if (allowed.length > 0 && allowed.indexOf(screenId) === -1) {
       screenId = allowed[0];
@@ -94,16 +97,16 @@
     renderSidebar();
     var fn = RENDERERS[screenId];
     $('#content').innerHTML = '';
-    if (fn) fn($('#content'));
+    if (fn) fn($('#content'), { refresh: !!(opts && opts.refresh) });
   }
 
-  function refreshCurrent() { navigateTo(current); }
+  function refreshCurrent() { navigateTo(current, { refresh: true }); }
 
   function switchRole(role, screen) {
     S.role = role;
     toast('Ahora estás viendo el sistema como ' + S.users[role].role + '.', 'info');
     renderTopbar();
-    var defaultScreen = (role === 'propio') ? 'misviajes' : (role === 'tercero') ? 'terceros' : 'dashboard';
+    var defaultScreen = (role === 'propio') ? 'misviajes' : (role === 'tercero') ? 'terceros' : (role === 'supervisor') ? 'historial' : 'dashboard';
     navigateTo(screen || defaultScreen);
   }
 
@@ -162,7 +165,7 @@
 
     renderTopbar();
     renderSidebar();
-    var startScreen = (S.role === 'propio') ? 'misviajes' : (S.role === 'tercero') ? 'terceros' : 'dashboard';
+    var startScreen = (S.role === 'propio') ? 'misviajes' : (S.role === 'tercero') ? 'terceros' : (S.role === 'supervisor') ? 'historial' : 'dashboard';
     navigateTo(startScreen);
   }
 

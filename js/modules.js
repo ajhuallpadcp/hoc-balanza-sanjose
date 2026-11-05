@@ -29,6 +29,44 @@
     return '<div><label class="form-label">' + esc(label) + '</label>' +
       '<input class="plain" id="' + id + '" type="text" placeholder="' + esc(placeholder || '') + '" value="' + esc(value || '') + '"></div>';
   }
+
+  /* -----------------------------------------------------------------------
+     Lectura de balanza (OCR) vs. valor enviado por el conductor.
+     El sistema siempre almacena el valor del OCR (w.ocrValue); el conductor puede
+     editar el peso antes de confirmar (w.value, w.manual = true).
+     ----------------------------------------------------------------------- */
+  function ocrDe(w) { return !w ? null : w.ocrValue != null ? w.ocrValue : (w.manual || w.estimated ? null : w.value); }
+  function fmtKg(v) { return v == null ? '—' : v.toLocaleString('es-PE') + ' kg'; }
+  // rows: filas adicionales del pesaje [etiqueta, valor] (fecha y hora, descarga / carga)
+  function lecturaHtml(w, rows) {
+    if (!w) return '';
+    var meta = (rows || []).map(function (r) {
+      return '<div class="lect__row lect__row--meta"><span>' + ICON.calendar + esc(r[0]) + '</span><strong>' + esc(r[1]) + '</strong></div>';
+    }).join('');
+    if (w.outOfService) {
+      return '<div class="lect is-oos"><div class="lect__note lect__note--oos">' + ICON.warn +
+        '<span>Balanza fuera de servicio · sin lectura OCR ni peso enviado. La foto queda como evidencia.</span></div>' + meta + '</div>';
+    }
+    var ocr = ocrDe(w);
+    var editado = !!w.manual && ocr != null && w.value !== ocr;
+    var note = '';
+    if (w.estimated) {
+      note = '<div class="lect__note lect__note--warn">' + ICON.warn + '<span>Peso estimado por el sistema (sin lectura de balanza).</span></div>';
+    }
+    return '<div class="lect' + (editado ? ' is-edited' : '') + '">' +
+      '<div class="lect__row lect__row--ocr"><span>' + ICON.scale + 'Lectura de balanza (OCR)</span><strong>' + (ocr != null ? esc(fmtKg(ocr)) : '<em>Sin lectura</em>') + '</strong></div>' +
+      '<div class="lect__row lect__row--drv"><span>' + ICON.userIco + (w.estimated ? 'Peso estimado' : 'Enviado por el conductor') + '</span><strong>' + esc(fmtKg(w.value)) + '</strong></div>' +
+      meta + note + '</div>';
+  }
+  // Texto corto para pies de foto / lightbox
+  function lecturaTxt(w) {
+    if (!w) return '';
+    if (w.outOfService) return 'Balanza fuera de servicio (evidencia)';
+    var ocr = ocrDe(w);
+    if (w.estimated) return 'Peso estimado ' + fmtKg(w.value);
+    return 'OCR ' + fmtKg(ocr) + ' · Conductor ' + fmtKg(w.value);
+  }
+
   function weighSummary(w) {
     if (!w) return '<span class="muted" style="color:var(--gray-400)">—</span>';
     if (w.outOfService) {
@@ -38,7 +76,7 @@
     var bits = [w.value.toLocaleString('es-PE') + ' kg'];
     return w.value.toLocaleString('es-PE') + ' kg' +
       (w.estimated ? ' <span class="badge badge-warning" style="margin-left:4px;">Estimado</span>' : '') +
-      (w.manual ? ' <span class="badge badge-neutral" style="margin-left:4px;">Corregido</span>' : '');
+      '';
   }
 
   /* =======================================================================
@@ -51,7 +89,7 @@
 
       root.innerHTML =
         '<div class="kpi-grid">' +
-        kpiCard('info', ICON.users, poolEnUso, 'Pool en uso', 'Tablets asignadas a estadías activas') +
+        kpiCard('info', ICON.users, poolEnUso, 'Pool en uso', 'Tablets asignadas a tickets activos') +
         kpiCard('warning', ICON.tablet, poolSinAsociar, 'Pool sin asociar', 'Tablets libres para asignación') +
         '</div>';
       return;
@@ -236,17 +274,7 @@
 
     UI.on('.js-ticket-view', 'click', function () {
       var id = this.getAttribute('data-id');
-      var k = S.tickets.find(function (x) { return x.id === id; });
-      var fields = [['Tolva', 'tolva'], ['Labor', 'labor'], ['Nivel', 'nivel'], ['Equipo Scoop', 'equipoScoop'],
-      ['Operador Scoop', 'operadorScoop'], ['Tipo de material', 'tipoMaterial'],
-      ['Punto intermedio', 'puntoIntermedio'], ['Destino', 'destino']];
-      var body = fields.map(function (f) {
-        return '<div class="info-row"><span class="label">' + f[0] + '</span><span class="value">' + esc(k[f[1]] || '—') + '</span></div>';
-      }).join('') +
-        '<div class="info-row"><span class="label">Pesaje cargado</span><span class="value">' + weighSummary(k.pesajeCargado) + '</span></div>' +
-        '<div class="info-row"><span class="label">Descarga</span><span class="value">' + esc(k.descarga || '—') + '</span></div>';
-      confirmDialog({ title: 'Detalle del ticket ' + id, body: body, confirmLabel: 'Cerrar' }, function () { });
-      $('.js-modal-cancel').style.display = 'none';
+      openTicketDetail(S.tickets.find(function (x) { return x.id === id; }));
     }, root);
   }
 
@@ -256,6 +284,8 @@
       fieldSel('Tolva', 'f-tolva', optionList(c.tolvas)) +
       fieldSel('Labor', 'f-labor', optionList(c.labores)) +
       fieldSel('Nivel', 'f-nivel', optionList(c.niveles)) +
+      fieldSel('Veta', 'f-veta', optionList(c.vetas)) +
+      fieldSel('Zona', 'f-zona', optionList(c.zonas)) +
       fieldSel('Equipo Scoop', 'f-scoop', optionList(c.equiposScoop)) +
       fieldSel('Operador Scoop', 'f-opscoop', optionList(c.operadoresScoop)) +
       fieldSel('Tipo de material', 'f-material', optionList(c.tiposMaterial)) +
@@ -263,8 +293,13 @@
       fieldSel('Destino', 'f-destino', optionList(c.destinos)) +
       '</div>';
     confirmDialog({ title: 'Nuevo viaje · Ticket de extracción', subtitle: 'Camión ' + S.turno.camion, body: html, confirmLabel: 'Crear ticket' }, function () {
+      var now = new Date();
       var k = {
-        id: S.genTicketId(),
+        id: S.genTicketId($('#f-material').value),
+        fecha: S.todayStr(),
+        horaCarguio: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
+        turno: S.turno.turnoNombre, camion: S.turno.camion, operadorCamion: S.users.propio.name, tara: S.turno.tara,
+        veta: $('#f-veta').value, zona: $('#f-zona').value,
         tolva: $('#f-tolva').value, labor: $('#f-labor').value, nivel: $('#f-nivel').value,
         equipoScoop: $('#f-scoop').value, operadorScoop: $('#f-opscoop').value,
         tipoMaterial: $('#f-material').value, puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
@@ -300,7 +335,7 @@
 
   /* -----------------------------------------------------------------------
      Barra de filtros compartida (estado + rango de fechas) y paginación.
-     Se usa en Administración de Tablets y en Garita.
+     Se usa en Administración de Tablets, Garita e Historial de pesajes (este último sin fechas).
      ----------------------------------------------------------------------- */
   // Estado del calendario de rango (borrador hasta pulsar "Aplicar rango")
   var filterCal = { draftFrom: '', draftTo: '', month: new Date().getMonth(), year: new Date().getFullYear() };
@@ -335,12 +370,14 @@
     return '<div class="filter-tools">' +
       '<div class="filter-toolhead">' +
       '<div><h3>' + esc(opts.title) + '</h3><p>' + esc(opts.subtitle) + '</p></div>' +
-      '<button class="btn btn-primary enroll-cta" id="' + opts.ctaId + '"><span class="enroll-cta__plus" aria-hidden="true">' + ICON.plus + '</span> ' + esc(opts.ctaLabel) + '</button>' +
+      (opts.ctaId
+        ? '<button class="btn btn-primary enroll-cta" id="' + opts.ctaId + '"><span class="enroll-cta__plus" aria-hidden="true">' + (opts.ctaIcon || ICON.plus) + '</span> ' + esc(opts.ctaLabel) + '</button>'
+        : (opts.headExtra || '')) +
       '</div>' +
       '<div class="filter-bar">' +
       '<div class="flt-segments" role="group" aria-label="Filtrar por estado">' + segments + '</div>' +
       '<div class="flt-dates">' +
-      '<div class="flt-datepop">' +
+      (opts.hideDates ? (opts.barExtra || '') : '<div class="flt-datepop">' +
       '<button type="button" class="btn btn-outline flt-date-trigger' + (hasRange ? ' is-active' : '') + '" id="flt-date-trigger" aria-expanded="false" aria-controls="flt-cal">' +
       '<span class="flt-date-trigger__label">' + ICON.calendar + '<span>' + esc(rangeLabel) + '</span></span>' + ICON.chevronDown + '</button>' +
       '<div class="flt-cal" id="flt-cal" hidden>' +
@@ -354,7 +391,7 @@
       '<div class="flt-cal__hint" id="flt-cal-hint"></div>' +
       '<div class="flt-cal__quick"><button type="button" data-period="today">Hoy</button><button type="button" data-period="week">Últimos 7 días</button><button type="button" data-period="month">Últimos 30 días</button></div>' +
       '<div class="flt-cal__actions"><button type="button" class="btn btn-outline btn-sm" id="flt-cal-reset">Quitar rango</button><button type="button" class="btn btn-primary btn-sm" id="flt-cal-apply">Aplicar rango</button></div>' +
-      '</div></div>' +
+      '</div></div>') +
       '<button type="button" class="btn btn-outline flt-clear" id="flt-clear">↺ Limpiar filtros</button>' +
       '</div></div>' +
       '<div class="filter-results">' + esc(opts.results) + '</div>' +
@@ -403,6 +440,10 @@
     var trigger = $('#flt-date-trigger', root);
     var panel = $('#flt-cal', root);
     var cal = filterCal;
+    if (trigger) attachDateRange();
+
+    // Calendario de rango (se omite cuando la barra se renderiza con hideDates)
+    function attachDateRange() {
 
     function renderCalendar() {
       $('#flt-cal-month', root).textContent = MONTHS_ES[cal.month] + ' ' + cal.year;
@@ -478,6 +519,7 @@
       pager.page = 1;
       refresh();
     });
+    }
     // Cierre al hacer clic fuera o con Escape (se registra una sola vez)
     if (!attachFilterToolbar.globalBound) {
       attachFilterToolbar.globalBound = true;
@@ -491,6 +533,7 @@
 
     $('#flt-clear', root).addEventListener('click', function () {
       filters.estado = ''; filters.desde = ''; filters.hasta = '';
+      if ('q' in filters) filters.q = '';
       pager.page = 1;
       refresh();
     });
@@ -728,7 +771,7 @@
         if (val === 'fija') {
           msg = '<strong style="color:var(--navy-900);">Camión propio:</strong> El dispositivo quedará configurado para operar fijo en un volquete de la compañía. Su estado pasará a <em>Sin asociar</em> hasta vincularlo a una patente.' + disassocWarning;
         } else if (val === 'pool') {
-          msg = '<strong style="color:var(--navy-900);">Pool de terceros:</strong> El dispositivo se integrará al pool de Garita para asignarse temporalmente a transportistas terceros durante su estadía.' + disassocWarning;
+          msg = '<strong style="color:var(--navy-900);">Pool de terceros:</strong> El dispositivo se integrará al pool de Garita para asignarse temporalmente a transportistas terceros durante su ticket.' + disassocWarning;
         } else if (val === 'repuesto') {
           msg = '<strong style="color:var(--navy-900);">Repuesto:</strong> El dispositivo pasará a reserva de contingencia para sustituir tablets que entren en mantenimiento o falla operativa.' + disassocWarning;
         }
@@ -978,15 +1021,15 @@
   var garitaFilters = { estado: '', desde: '', hasta: '' };
   var garitaPager = { page: 1, size: 5 };
   var GARITA_SEGMENTS = [
-    { id: '', label: 'Todas', dot: '' },
-    { id: 'activa', label: 'Activa', dot: 'info' },
+    { id: '', label: 'Todos', dot: '' },
+    { id: 'activa', label: 'Activo', dot: 'info' },
     { id: 'mantenimiento', label: 'En mantenimiento', dot: 'danger' },
-    { id: 'cerrada', label: 'Cerrada', dot: 'success' }
+    { id: 'cerrada', label: 'Cerrado', dot: 'success' }
   ];
   var ESTADIA_ESTADO = {
-    activa: { label: 'Activa', badge: 'badge-info' },
+    activa: { label: 'Activo', badge: 'badge-info' },
     mantenimiento: { label: 'En mantenimiento', badge: 'badge-danger' },
-    cerrada: { label: 'Cerrada', badge: 'badge-success' }
+    cerrada: { label: 'Cerrado', badge: 'badge-success' }
   };
   function estadiaBadge(e) {
     var st = ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa;
@@ -1007,26 +1050,33 @@
     return estadiaMatchesDates(e);
   }
 
-  function renderGarita(root) {
+  function renderGarita(root, opts) {
+    // Desde el menú se vuelve siempre a la grilla; los refrescos internos conservan el ticket abierto
+    if (!(opts && opts.refresh)) garitaDetailId = null;
+    if (garitaDetailId) {
+      var abierto = S.estadias.find(function (x) { return x.id === garitaDetailId; });
+      if (abierto) { renderGaritaTicket(root, abierto); return; }
+      garitaDetailId = null;
+    }
     var inRange = S.estadias.filter(estadiaMatchesDates);
     var total = S.estadias.filter(estadiaMatchesFilters).length;
 
     root.innerHTML =
       '<div class="card filter-card">' +
       renderFilterToolbar({
-        title: 'Estadías de terceros',
+        title: 'Tickets de terceros',
         subtitle: 'Filtra por estado y fecha de ingreso',
         ctaId: 'btn-new-entry',
         ctaLabel: 'Registrar ingreso',
         filters: garitaFilters,
         dateLabel: 'Fecha de ingreso',
-        results: total + ' de ' + S.estadias.length + ' estadías',
+        results: total + ' de ' + S.estadias.length + ' tickets',
         segments: GARITA_SEGMENTS.map(function (s) {
           return { id: s.id, label: s.label, dot: s.dot, count: s.id ? inRange.filter(function (e) { return e.estado === s.id; }).length : inRange.length };
         })
       }) +
       '<div class="card__body" style="padding:0;">' + renderEstadiasTable() + '</div>' +
-      renderPagination(total, garitaPager, 'estadías') +
+      renderPagination(total, garitaPager, 'tickets') +
       '</div>';
     attachGaritaHandlers(root);
   }
@@ -1039,7 +1089,7 @@
     var lista = S.estadias.filter(estadiaMatchesFilters);
     if (lista.length === 0) {
       garitaPager.page = 1;
-      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay estadías que coincidan con los filtros seleccionados.</div>';
+      return '<div style="padding:28px 20px;text-align:center;color:var(--gray-500);font-size:15.5px;">No hay tickets que coincidan con los filtros seleccionados.</div>';
     }
     var rows = paginate(lista, garitaPager).map(function (e) {
       var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
@@ -1054,13 +1104,13 @@
       } else if (e.estado === 'mantenimiento') {
         primary = '<button class="btn btn-outline btn-sm row-primary js-reactivar" data-id="' + e.id + '">Reactivar</button>';
       } else {
-        primary = '<span class="row-primary row-primary--empty" title="Estadía cerrada · sin acciones pendientes">—</span>';
+        primary = '<span class="row-primary row-primary--empty" title="Ticket cerrado · sin acciones pendientes">—</span>';
       }
 
       // Acciones secundarias en menú ⋮
       var menuItems = '<button type="button" role="menuitem" class="row-menu__item js-show-pin" data-id="' + e.id + '">' + ICON.lock + '<span>Mostrar PIN</span></button>' +
         '<button type="button" role="menuitem" class="row-menu__item js-estadia-edit" data-id="' + e.id + '"' +
-        (cerrada ? ' disabled title="La estadía está cerrada y ya no se puede editar"' : '') + '>' + ICON.edit + '<span>Editar</span></button>';
+        (cerrada ? ' disabled title="El ticket está cerrado y ya no se puede editar"' : '') + '>' + ICON.edit + '<span>Editar</span></button>';
       if (e.estado === 'mantenimiento') {
         menuItems += '<button type="button" role="menuitem" class="row-menu__item js-exit" data-id="' + e.id + '"' +
           (!tablet ? ' disabled title="Asigna una tablet primero"' : '') + '>' + ICON.logout + '<span>Registrar salida</span></button>';
@@ -1070,21 +1120,171 @@
         '<div class="row-menu__panel" role="menu" hidden>' + menuItems + '</div>' +
         '</div>';
       return '<tr>' +
-        '<td><strong>' + esc(e.placa) + '</strong></td>' +
+        '<td style="white-space:nowrap;"><strong>' + esc(e.ticket) + '</strong></td>' +
+        '<td style="white-space:nowrap;"><strong>' + esc(e.placa) + '</strong></td>' +
         '<td>' + esc(e.empresa) + '</td>' +
         '<td>' + esc(e.conductor) + '</td>' +
-        '<td>' + esc(e.documento || '—') + '</td>' +
         '<td class="text-center">' + tabletCell + '</td>' +
         '<td class="text-center">' + e.viajes.length + '</td>' +
         '<td class="text-center">' + estadiaBadge(e) + '</td>' +
-        '<td class="text-center muted" style="color:var(--gray-500);">' + esc(e.ingresoEn) + '</td>' +
-        '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle de la estadía">' + ICON.eye + '</button></div></td>' +
+        '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle del ticket">' + ICON.eye + '</button></div></td>' +
         '<td class="text-center"><div class="row-actions row-actions--garita">' + primary + overflow + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Patente</th><th>Empresa</th><th>Conductor</th><th>Documento</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Ingreso</th><th class="text-center">Detalle</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
+      '<th>Ticket</th><th>Patente</th><th>Empresa</th><th>Conductor</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Detalle</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+
+  /* -----------------------------------------------------------------------
+     Garita · Vista de detalle del ticket de tercero (pantalla completa)
+     Un ticket puede tener varios viajes: se listan en tarjetas y cada viaje
+     abre su detalle (hoja inferior en móvil) con las fotos de sus pesajes.
+     ----------------------------------------------------------------------- */
+  var garitaDetailId = null; // id interno del ticket abierto (null = grilla)
+
+  function viajeEstadoBadge(v) {
+    return v.estado === 'Cerrado' ? '<span class="badge badge-success">Cerrado</span>' : '<span class="badge badge-info">En curso</span>';
+  }
+  function viajePesajes(v) {
+    var entradaEst = v.sentido || null;
+    var salidaEst = entradaEst ? estadoSalida(entradaEst) : null;
+    return { entradaEst: entradaEst, salidaEst: salidaEst, entrada: entradaEst ? v[entradaEst] : null, salida: salidaEst ? v[salidaEst] : null };
+  }
+  function pesoCorto(w) {
+    if (!w) return '<em>—</em>';
+    if (w.outOfService) return '<span class="badge badge-warning">Fuera de servicio</span>';
+    if (w.value == null) return '<em>—</em>';
+    return esc(kgTxt(w.value));
+  }
+  function horaDe(w) { return w && w.ts ? String(w.ts).slice(-5) : ''; }
+  /* -----------------------------------------------------------------------
+     Tarjeta de pesaje estandarizada (Garita · detalle de viaje y
+     Supervisor / Mis Viajes · detalle de ticket): título, foto ampliable,
+     lectura OCR vs. valor del conductor y datos propios del pesaje.
+     ----------------------------------------------------------------------- */
+  // Foto del pesaje: la imagen real subida por el conductor o el display simulado de la balanza.
+  // ref = { id, camion, fecha (dd/mm/aaaa) } para el sello de la foto; kind = 'tara' | 'cargado'
+  function fotoPesaje(w, ref, kind) {
+    if (!w) return '';
+    if (w.photoUrl) return '<img class="tkd-photo__img" src="' + esc(w.photoUrl) + '" alt="Foto del pesaje">';
+    var pseudo = { id: ref.id, camion: ref.camion, fecha: ref.fecha || '', horaCarguio: '', tara: w, pesajeCargado: w };
+    return balanzaPhotoSvg(pseudo, kind);
+  }
+  // o = { title, w, photo (html), key (para ampliar), empty (texto sin pesaje), extra: [[etiqueta, valor], ...] }
+  function pesajeCard(o) {
+    if (!o.w) {
+      return '<section class="pc"><h4>' + esc(o.title) + '</h4>' +
+        '<div class="tkd-photo tkd-photo--empty">' + ICON.camera + '<p>' + esc(o.empty || 'Sin pesaje registrado.') + '</p></div></section>';
+    }
+    var rows = [['Fecha y hora', o.w.ts || '—']].concat(o.extra || []);
+    return '<section class="pc"><h4>' + esc(o.title) + '</h4>' +
+      '<button type="button" class="tkd-photo__main js-pc-zoom" data-key="' + esc(o.key) + '" title="Ampliar foto">' + o.photo +
+      '<span class="tkd-photo__zoom">' + ICON.eye + ' Ampliar</span></button>' +
+      lecturaHtml(o.w, rows) + '</section>';
+  }
+  function pesajeNeto(neto, sinNeto) {
+    return '<div class="tkd-weight tkd-weight--net pc-net"><span>Peso neto</span><strong>' +
+      (neto != null ? esc(kgTxt(neto)) : esc(sinNeto || '—')) + '</strong>' +
+      '</div>';
+  }
+  // zooms: { key: { photo: html, caption: texto } }
+  function bindPesajeZoom(overlay, zooms) {
+    UI.on('.js-pc-zoom', 'click', function () {
+      var z = zooms[this.getAttribute('data-key')];
+      if (z) openPhotoLightbox(z.photo, z.caption);
+    }, overlay);
+  }
+
+  function renderGaritaTicket(root, e) {
+    var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
+
+    $('#topbar-title').textContent = 'Ticket ' + e.ticket;
+    $('#topbar-subtitle').textContent = 'Garita · detalle del ticket y sus viajes';
+
+    var fields = [
+      ['Empresa', e.empresa], ['Tipo de carga / material', e.tipoCarga || '—'],
+      ['Patente', e.placa], ['Patente secundaria', e.placaSecundaria || '—'],
+      ['Conductor', e.conductor], ['Documento', e.documento || '—'],
+      ['Destino / sector', e.destino || '—'], ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
+      ['Ingreso', e.ingresoEn || '—'], ['Salida', e.salidaEn || '—']
+    ];
+    var total = e.viajes.length;
+    var trips = total ? e.viajes.map(function (v, i) {
+      var p = viajePesajes(v);
+      var netoTxt = v.neto != null ? esc(kgTxt(v.neto)) : '<em>—</em>';
+      return '<button type="button" class="gtk-trip js-gtk-trip" data-id="' + esc(v.id) + '" data-n="' + (total - i) + '" aria-label="Ver detalle del viaje ' + (total - i) + '">' +
+        '<span class="gtk-trip__head"><strong>Viaje ' + (total - i) + '</strong><span class="gtk-trip__id">' + esc(v.id) + '</span>' + viajeEstadoBadge(v) + '</span>' +
+        '<span class="gtk-trip__w"><small>Entrada' + (p.entradaEst ? ' · ' + ESTADO_PESAJE[p.entradaEst] : '') + (horaDe(p.entrada) ? ' · ' + esc(horaDe(p.entrada)) : '') + '</small><b>' + pesoCorto(p.entrada) + '</b></span>' +
+        '<span class="gtk-trip__w"><small>Salida' + (p.salidaEst ? ' · ' + ESTADO_PESAJE[p.salidaEst] : '') + (horaDe(p.salida) ? ' · ' + esc(horaDe(p.salida)) : '') + '</small><b>' + pesoCorto(p.salida) + '</b></span>' +
+        '<span class="gtk-trip__net"><small>Neto</small><strong>' + netoTxt + '</strong></span>' +
+        '<span class="gtk-trip__chev" aria-hidden="true">›</span>' +
+        '</button>';
+    }).join('') : '<div class="empty-state">' + ICON.empty + '<p>Aún no se han registrado viajes en este ticket.</p></div>';
+
+    root.innerHTML =
+      '<div class="gtk">' +
+      '<button type="button" class="gtk-back js-gtk-back">‹ Volver a Garita</button>' +
+      '<section class="card gtk-head">' +
+      '<div class="gtk-head__top"><div>' +
+      '<span class="gtk-eyebrow">Ticket de tercero</span><h2>' + esc(e.ticket) + '</h2></div>' + estadiaBadge(e) + '</div>' +
+      '<div class="gtk-data__grid">' + fields.map(function (f) {
+        return '<div class="tkd-field"><span>' + esc(f[0]) + '</span><strong>' + esc(f[1]) + '</strong></div>';
+      }).join('') + '</div>' +
+      '</section>' +
+      '<div class="gtk-section-head"><h3>Viajes</h3><span>' + total + ' viaje' + (total === 1 ? '' : 's') + ' · del más reciente al más antiguo</span></div>' +
+      '<div class="gtk-trips">' + trips + '</div>' +
+      '</div>';
+
+    $('.js-gtk-back', root).addEventListener('click', function () {
+      garitaDetailId = null;
+      Shell.refreshCurrent();
+      scrollContentTop();
+    });
+    UI.on('.js-gtk-trip', 'click', function () {
+      var id = this.getAttribute('data-id');
+      openViajeDetail(e, e.viajes.find(function (v) { return v.id === id; }), this.getAttribute('data-n'));
+    }, root);
+  }
+
+  function scrollContentTop() {
+    var c = $('#content');
+    if (c) c.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
+
+  function openViajeDetail(e, v, n) {
+    if (!v) return;
+    var p = viajePesajes(v);
+    var ref = { id: e.ticket, camion: e.placa, fecha: '01/01/' + ((e.ingresoIso || '').slice(0, 4) || new Date().getFullYear()) };
+    var oosEntrada = p.entrada && p.entrada.outOfService;
+    var intermedioLabel = p.entradaEst === 'vacio' ? 'Carga' : 'Descarga';
+    var zooms = {};
+    function card(lado, w, est, empty, extra) {
+      var titulo = 'Pesaje de ' + lado + (est ? ' · ' + ESTADO_PESAJE[est] : '');
+      var photo = fotoPesaje(w, ref, est === 'vacio' ? 'tara' : 'cargado');
+      if (w) zooms[lado] = { photo: photo, caption: 'Ticket ' + e.ticket + ' · Viaje ' + n + ' · ' + titulo + ' · ' + (w.ts || '') + ' · ' + lecturaTxt(w) };
+      return pesajeCard({ title: titulo, w: w, photo: photo, key: lado, empty: empty, extra: extra });
+    }
+    var html =
+      '<div class="modal__head"><div><h3>Viaje ' + esc(n) + ' · ' + esc(v.id) + '</h3>' +
+      '<p>Ticket ' + esc(e.ticket) + ' · ' + esc(e.placa) + '</p></div>' +
+      '<div class="tkd-head-badges">' + viajeEstadoBadge(v) + syncBadge(syncStatusFor(v.id)) + '</div></div>' +
+      '<div class="modal__body"><div class="pc-wrap">' +
+      '<div class="pc-grid">' +
+      card('entrada', p.entrada, p.entradaEst, 'Sin pesaje de entrada.') +
+      // La descarga / carga ocurre entre ambos pesajes y se registra junto con el pesaje de salida
+      card('salida', p.salida, p.salidaEst, oosEntrada ? 'Sin pesaje de salida: la balanza estaba fuera de servicio.' : 'Sin pesaje de salida.',
+        v.intermedio ? [[intermedioLabel, v.intermedio]] : []) +
+      '</div>' +
+      pesajeNeto(v.neto) +
+      '</div></div>' +
+      '<div class="modal__foot"><button class="btn btn-primary js-modal-cancel">Cerrar</button></div>';
+
+    var overlay = openModal(html);
+    $('.modal', overlay).classList.add('modal-viaje');
+    bindPesajeZoom(overlay, zooms);
   }
 
   function attachGaritaHandlers(root) {
@@ -1099,11 +1299,11 @@
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento') +
         fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector)) +
         '</div>';
-      confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
+      confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear ticket' }, function () {
         var placa = ($('#f-placa').value || 'S/PATENTE').toUpperCase();
         var pin = String(Math.floor(1000 + Math.random() * 9000));
         var e = {
-          id: S.genEstadiaId(), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
+          id: S.genEstadiaId(), ticket: S.genTicketId($('#f-carga').value), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
           placa: placa, placaSecundaria: ($('#f-placa-sec').value || '').trim().toUpperCase(),
           conductor: $('#f-conductor').value || 'Sin registrar',
           documento: $('#f-documento').value || '—',
@@ -1112,9 +1312,9 @@
           tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr(), ingresoIso: isoLocal(new Date())
         };
         S.estadias.unshift(e);
-        S.enqueueSync('Ingreso de tercero', placa);
-        S.addActivity('Ingreso registrado', placa + ' · ' + e.empresa, 'ok');
-        toast('Estadía registrada para ' + placa + '. PIN de acceso: ' + pin + '.', 'success');
+        S.enqueueSync('Ingreso de tercero', e.ticket + ' · ' + placa);
+        S.addActivity('Ingreso registrado', e.ticket + ' · ' + placa + ' · ' + e.empresa, 'ok');
+        toast('Ticket ' + e.ticket + ' registrado para ' + placa + '. PIN de acceso: ' + pin + '.', 'success');
         Shell.refreshCurrent();
       });
     });
@@ -1132,7 +1332,7 @@
         tablet.status = 'ocupado';
         tablet.camion = e.placa;
         e.tabletId = tablet.id;
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet.code || tablet.id) + ' asignada temporalmente a patente ' + e.placa + ' (' + e.id + ')', usuario: S.users.garita.name });
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet.code || tablet.id) + ' asignada temporalmente a patente ' + e.placa + ' (' + e.ticket + ')', usuario: S.users.garita.name });
         S.addActivity('Tablet asignada', (tablet.code || tablet.id) + ' → ' + e.placa, 'ok');
         toast('Tablet ' + (tablet.code || tablet.id) + ' asignada. El conductor ya puede operar el módulo de Terceros.', 'success');
         Shell.refreshCurrent();
@@ -1147,47 +1347,25 @@
         toast('No se puede cerrar: el viaje ' + incompleto.id + ' está incompleto.', 'error');
         return;
       }
-      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará la estadía y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
+      confirmDialog({ title: 'Registrar salida', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se cerrará el ticket y la tablet asignada pasará automáticamente al estado Sin asociar en el pool.</p>' }, function () {
         e.estado = 'cerrada'; e.salidaEn = S.nowStr();
         var tablet = S.tablets.find(function (t) { return t.id === e.tabletId; });
         if (tablet) {
           tablet.status = 'sin_asociar';
           tablet.camion = null;
         }
-        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet ? tablet.id : '') + ' desasociada automáticamente al cerrar ' + e.id, usuario: 'Sistema' });
+        if (S.tabletHistory) S.tabletHistory.unshift({ ts: S.nowStr(), detalle: (tablet ? tablet.id : '') + ' desasociada automáticamente al cerrar ' + e.ticket, usuario: 'Sistema' });
         S.enqueueSync('Salida de tercero', e.placa);
-        S.addActivity('Salida registrada', e.placa + ' · estadía cerrada', 'ok');
+        S.addActivity('Salida registrada', e.ticket + ' · ' + e.placa + ' · ticket cerrado', 'ok');
         toast('Salida registrada. Tablet desasociada y devuelta al pool.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
 
     UI.on('.js-estadia-view', 'click', function () {
-      var id = this.getAttribute('data-id');
-      var e = S.estadias.find(function (x) { return x.id === id; });
-      if (!e) return;
-      var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
-      var cerrados = e.viajes.filter(function (v) { return v.estado === 'Cerrado'; }).length;
-      var fields = [
-        ['Estadía', e.id],
-        ['Patente', e.placa],
-        ['Patente secundaria', e.placaSecundaria || '—'],
-        ['Empresa', e.empresa],
-        ['Tipo de carga / material', e.tipoCarga || '—'],
-        ['Conductor', e.conductor],
-        ['Documento', e.documento || '—'],
-        ['Destino / sector', e.destino || '—'],
-        ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
-        ['Ingreso', e.ingresoEn || '—'],
-        ['Salida', e.salidaEn || '—'],
-        ['Estado', (ESTADIA_ESTADO[e.estado] || ESTADIA_ESTADO.activa).label],
-        ['Nro. viajes', e.viajes.length + ' (' + cerrados + ' cerrados)']
-      ];
-      var body = fields.map(function (f) {
-        return '<div class="info-row"><span class="label">' + f[0] + '</span><span class="value">' + esc(f[1]) + '</span></div>';
-      }).join('');
-      confirmDialog({ title: 'Detalle de la estadía', subtitle: 'Patente ' + e.placa, body: body, confirmLabel: 'Cerrar' }, function () { });
-      $('.js-modal-cancel').style.display = 'none';
+      garitaDetailId = this.getAttribute('data-id');
+      Shell.refreshCurrent();
+      scrollContentTop();
     }, root);
 
     UI.on('.js-show-pin', 'click', function () {
@@ -1247,7 +1425,7 @@
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
         fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector, e.destino)) +
         '</div>';
-      confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
+      confirmDialog({ title: 'Editar ticket', subtitle: e.ticket + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
         var placa = ($('#f-placa').value || '').trim().toUpperCase();
         if (!placa) { toast('La patente no puede estar vacía.', 'error'); return; }
         e.empresa = $('#f-empresa').value;
@@ -1260,10 +1438,10 @@
         // Mantiene la patente visible en la tablet asignada
         var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
         if (tablet) tablet.camion = placa;
-        var det = e.id + ' · ' + placa + ' editada';
-        S.enqueueSync('Edición de estadía', placa);
-        S.addActivity('Estadía editada', det, 'ok');
-        toast('Estadía de ' + placa + ' actualizada.', 'success');
+        var det = e.ticket + ' · ' + placa + ' editado';
+        S.enqueueSync('Edición de ticket', e.ticket + ' · ' + placa);
+        S.addActivity('Ticket editado', det, 'ok');
+        toast('Ticket ' + e.ticket + ' de ' + placa + ' actualizado.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
@@ -1272,11 +1450,11 @@
       var id = this.getAttribute('data-id');
       var e = S.estadias.find(function (x) { return x.id === id; });
       if (!e) return;
-      confirmDialog({ title: 'Reactivar estadía', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y la estadía volverá a quedar Activa para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
+      confirmDialog({ title: 'Reactivar ticket', subtitle: e.placa, body: '<p style="font-size:15.5px;color:var(--gray-600);">El vehículo dejará el estado En mantenimiento y el ticket volverá a quedar Activo para continuar operando.</p>', confirmLabel: 'Reactivar' }, function () {
         e.estado = 'activa';
-        S.enqueueSync('Reactivación de estadía', e.placa);
-        S.addActivity('Estadía reactivada', e.id + ' · ' + e.placa, 'ok');
-        toast('Estadía de ' + e.placa + ' reactivada.', 'success');
+        S.enqueueSync('Reactivación de ticket', e.ticket + ' · ' + e.placa);
+        S.addActivity('Ticket reactivado', e.ticket + ' · ' + e.placa, 'ok');
+        toast('Ticket ' + e.ticket + ' de ' + e.placa + ' reactivado.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
@@ -1350,6 +1528,7 @@
       '<div class="grid-2">' +
       '<div class="card"><div class="card__head"><div><h3>Detalles del conductor</h3></div></div>' +
       '<div class="card__body">' +
+      '<div class="info-row"><span class="label">Ticket</span><span class="value"><strong>' + esc(estadia.ticket) + '</strong></span></div>' +
       '<div class="info-row"><span class="label">Empresa</span><span class="value">' + esc(estadia.empresa) + '</span></div>' +
       '<div class="info-row"><span class="label">Patente</span><span class="value">' + esc(estadia.placa) + '</span></div>' +
       '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(estadia.conductor) + '</span></div>' +
@@ -1362,7 +1541,7 @@
       '<div class="card__body">' + renderViajeActivo(estadia, viajeActivo) + '</div></div>' +
       '</div>' +
 
-      '<div class="card"><div class="card__head"><div><h3>Viajes de la estadía</h3></div></div>' +
+      '<div class="card"><div class="card__head"><div><h3>Viajes del ticket ' + esc(estadia.ticket) + '</h3></div></div>' +
       '<div class="card__body" style="padding:0;">' + renderViajesTercerosTable(estadia) + '</div></div>';
 
     attachTercerosHandlers(root, estadia);
@@ -1381,11 +1560,11 @@
     if (!v && estadia.balanzaFueraServicio) {
       // Entrada registrada con balanza fuera de servicio: no se registran más pesos, el conductor devuelve la tablet.
       return '<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:15px;">' +
-        '<strong>Balanza fuera de servicio.</strong> El viaje se cerró con evidencia fotográfica. Devuelve la tablet en Garita para finalizar la estadía.</div>' +
+        '<strong>Balanza fuera de servicio.</strong> El viaje se cerró con evidencia fotográfica. Devuelve la tablet en Garita para finalizar el ticket.</div>' +
         '<button class="btn btn-primary btn-block" disabled title="Balanza fuera de servicio · devuelve la tablet en Garita">Iniciar viaje</button>';
     }
     if (!v) {
-      return '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de esta estadía.</p>' +
+      return '<p style="font-size:15px;color:var(--gray-600);margin-bottom:14px;">No hay un viaje en curso dentro de este ticket.</p>' +
         '<button class="btn btn-primary btn-block" id="btn-start-trip">Iniciar viaje</button>';
     }
     var entradaEst = v.sentido || null;
@@ -1414,7 +1593,7 @@
 
   function renderViajesTercerosTable(estadia) {
     if (estadia.viajes.length === 0) {
-      return '<div class="empty-state">' + ICON.empty + '<p>Aún no se han registrado viajes en esta estadía.</p></div>';
+      return '<div class="empty-state">' + ICON.empty + '<p>Aún no se han registrado viajes en este ticket.</p></div>';
     }
     var rows = estadia.viajes.map(function (v) {
       var entradaEst = v.sentido || null;
@@ -1437,7 +1616,7 @@
       var v = { id: S.genViajeId(), estado: 'en_curso', sentido: null, cargado: null, intermedio: null, vacio: null, neto: null };
       estadia.viajes.unshift(v);
       S.addActivity('Viaje iniciado', v.id + ' · ' + estadia.placa, 'ok');
-      toast('Viaje ' + v.id + ' iniciado dentro de la estadía.', 'success');
+      toast('Viaje ' + v.id + ' iniciado dentro del ticket ' + estadia.ticket + '.', 'success');
       Shell.refreshCurrent();
     });
 
@@ -1493,12 +1672,246 @@
   }
 
   /* =======================================================================
+     MÓDULO 6 · HISTORIAL DE PESAJES (Supervisor · app móvil)
+     Consulta de los tickets de extracción registrados por los conductores propios.
+     Solo lectura: grilla paginada + detalle del ticket con foto de la balanza.
+     ======================================================================= */
+  var histFilters = { estado: '', q: '' };
+  var histPager = { page: 1, size: 10 };
+  var HIST_SEGMENTS = [
+    { id: '', label: 'Todos', dot: '' },
+    { id: 'Abierto', label: 'Abierto', dot: 'info' },
+    { id: 'En mantenimiento', label: 'En mantenimiento', dot: 'danger' },
+    { id: 'Cerrado', label: 'Cerrado', dot: 'success' }
+  ];
+
+  function regIso(k) { return tabletDateIso(k.fecha); }
+  function regKey(k) { return regIso(k) + ' ' + (k.horaCarguio || ''); }
+  // Estados del ticket propio: Abierto · En mantenimiento · Cerrado
+  function ticketEstadoBadge(k) {
+    return k.estado === 'Abierto' ? '<span class="badge badge-info">Abierto</span>'
+      : k.estado === 'En mantenimiento' ? '<span class="badge badge-danger">En mantenimiento</span>'
+      : '<span class="badge badge-success">Cerrado</span>';
+  }
+  // Tickets de todos los conductores propios (turno en curso + histórico), del más reciente al más antiguo
+  function histRegistros() {
+    return S.tickets.filter(function (k) { return k.fecha; })
+      .concat(S.registrosHist)
+      .sort(function (a, b) { return regKey(b).localeCompare(regKey(a)) || b.id.localeCompare(a.id); });
+  }
+  // Texto normalizado para búsqueda: minúsculas y sin tildes
+  function histNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  // Búsqueda por número de ticket o nombre del conductor
+  function histMatchesBase(k) {
+    var q = histNorm(histFilters.q).trim();
+    if (q && histNorm(k.id).indexOf(q) === -1 && histNorm(k.operadorCamion).indexOf(q) === -1) return false;
+    return true;
+  }
+  function histMatchesEstado(k) {
+    return !histFilters.estado || k.estado === histFilters.estado;
+  }
+  function kgTxt(v) { return v == null ? '—' : v.toLocaleString('es-PE') + ' kg'; }
+
+  function renderHistorial(root) {
+    var all = histRegistros();
+    var base = all.filter(histMatchesBase);
+    var list = base.filter(histMatchesEstado);
+
+    var search =
+      '<label class="hist-search" for="hist-search">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>' +
+      '<input type="search" id="hist-search" placeholder="Buscar ticket o conductor" autocomplete="off" value="' + esc(histFilters.q) + '" aria-label="Buscar por ticket o nombre del conductor">' +
+      '</label>';
+
+    root.innerHTML =
+      '<div class="card filter-card">' +
+      renderFilterToolbar({
+        title: 'Pesajes registrados',
+        subtitle: 'Filtra por estado o busca por ticket o conductor',
+        hideDates: true,
+        barExtra: search,
+        filters: histFilters,
+        results: list.length + ' de ' + all.length + ' tickets',
+        segments: HIST_SEGMENTS.map(function (s) {
+          var count = !s.id ? base.length : base.filter(function (k) { return k.estado === s.id; }).length;
+          return { id: s.id, label: s.label, dot: s.dot, count: count };
+        })
+      }) +
+      '<div class="card__body" style="padding:0;">' + renderHistorialTable(list) + '</div>' +
+      renderPagination(list.length, histPager, 'tickets') +
+      '</div>';
+
+    attachFilterToolbar(root, histFilters, histPager);
+    // Búsqueda en vivo: se re-renderiza y se devuelve el foco al buscador
+    $('#hist-search', root).addEventListener('input', function () {
+      histFilters.q = this.value;
+      histPager.page = 1;
+      Shell.refreshCurrent();
+      var input = $('#hist-search');
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+    UI.on('.js-hist-view', 'click', function () {
+      var id = this.getAttribute('data-id');
+      openTicketDetail(all.find(function (x) { return x.id === id; }));
+    }, root);
+  }
+
+  // Peso compacto para la grilla: valor en kg y una marca corta si fue estimado o sin lectura
+  function histWeight(w) {
+    if (!w) return '<span style="color:var(--gray-400)">—</span>';
+    if (w.outOfService) return '<span class="badge badge-warning" title="Balanza fuera de servicio · Evidencia en auditoría">Sin lectura</span>';
+    if (w.value == null) return '<span style="color:var(--gray-400)">—</span>';
+    return esc(kgTxt(w.value)) + (w.estimated ? '<br><span class="badge badge-warning hist-flag">Estimado</span>' : '') +
+      '';
+  }
+
+  function renderHistorialTable(list) {
+    if (!list.length) {
+      histPager.page = 1;
+      return '<div class="empty-state">' + ICON.empty + '<p>No hay pesajes registrados con los filtros seleccionados.</p></div>';
+    }
+    var rows = paginate(list, histPager).map(function (k) {
+      return '<tr>' +
+        '<td class="hist-nowrap"><strong>' + esc(k.id) + '</strong></td>' +
+        '<td class="hist-nowrap">' + esc(k.fecha) + '</td>' +
+        '<td>' + (k.tipoMaterial === 'Mineral' ? '<span class="badge badge-gold">Mineral</span>' : '<span class="badge badge-neutral">Desmonte</span>') +
+        '</td>' +
+        '<td class="num hist-nowrap">' + histWeight(k.tara) + '</td>' +
+        '<td class="num hist-nowrap">' + histWeight(k.pesajeCargado) + '</td>' +
+        '<td class="num hist-nowrap"><strong>' + (k.neto != null ? esc(kgTxt(k.neto)) : '<span style="color:var(--gray-400)">' + (k.estado !== 'Abierto' ? 'Por regularizar' : 'Pendiente') + '</span>') + '</strong></td>' +
+        '<td class="text-center">' + ticketEstadoBadge(k) + '</td>' +
+        '<td class="text-center"><button type="button" class="icon-btn js-hist-view" data-id="' + esc(k.id) + '" title="Ver detalle del ticket" aria-label="Ver detalle del ticket ' + esc(k.id) + '">' + ICON.eye + '</button></td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="table-wrap"><table class="data-table hist-table"><thead><tr>' +
+      '<th>Ticket</th><th>Fecha</th><th>Material</th>' +
+      '<th>Tara</th><th>Pesaje cargado</th><th>Peso neto</th><th class="text-center">Estado</th><th class="text-center">Ver</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  /* -----------------------------------------------------------------------
+     Detalle del ticket (Mis Viajes del conductor e Historial de pesajes del supervisor)
+     ----------------------------------------------------------------------- */
+  function photoStamp(k, kind) {
+    var w = kind === 'tara' ? k.tara : k.pesajeCargado;
+    if (w && w.ts) return w.ts.length > 11 ? w.ts : w.ts.replace(/^(\d{2}\/\d{2})/, '$1/' + (k.fecha || '').slice(6));
+    return (k.fecha || '') + ' ' + (k.horaCarguio || '');
+  }
+
+  // Fotografía simulada del display de la balanza (SVG) con grano, viñeta y sello de cámara
+  function balanzaPhotoSvg(k, kind) {
+    var w = kind === 'tara' ? k.tara : k.pesajeCargado;
+    if (!w) return '';
+    var uid = (k.id + kind).replace(/[^a-zA-Z0-9]/g, '');
+    var oos = !!w.outOfService;
+    var lect = ocrDe(w) != null ? ocrDe(w) : w.value;
+    var digits = oos || lect == null ? '' : String(lect).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    var tilt = kind === 'tara' ? 1.6 : -2.2;
+    return '<svg class="tkd-photo__img" viewBox="0 0 640 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Foto del display de la balanza · ' + (kind === 'tara' ? 'Tara' : 'Pesaje cargado') + '">' +
+      '<defs>' +
+      '<linearGradient id="wall' + uid + '" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#5a5f63"/><stop offset=".55" stop-color="#3a3e42"/><stop offset="1" stop-color="#232628"/></linearGradient>' +
+      '<linearGradient id="box' + uid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7e3d9"/><stop offset="1" stop-color="#b9b4a8"/></linearGradient>' +
+      '<radialGradient id="vig' + uid + '" cx=".5" cy=".48" r=".75"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".62"/></radialGradient>' +
+      '<radialGradient id="flash' + uid + '" cx=".38" cy=".3" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
+      '<pattern id="hz' + uid + '" width="28" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="14" height="28" fill="#e2b43a"/><rect x="14" width="14" height="28" fill="#1d1d1d"/></pattern>' +
+      '<filter id="grain' + uid + '"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="' + (k.id.length * 7 + (kind === 'tara' ? 3 : 11)) + '"/><feColorMatrix values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .22 0"/></filter>' +
+      '<filter id="glow' + uid + '" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+      '<filter id="shadow' + uid + '" x="-10%" y="-10%" width="130%" height="140%"><feDropShadow dx="6" dy="12" stdDeviation="9" flood-opacity=".55"/></filter>' +
+      '</defs>' +
+      '<rect width="640" height="420" fill="url(#wall' + uid + ')"/>' +
+      '<g stroke="#2a2d30" stroke-width="2" opacity=".55"><path d="M0 70H640M0 330H640"/><path d="M90 0V70M300 0V70M520 0V70M60 330V420M380 330V420"/></g>' +
+      '<g fill="#6b7075" opacity=".7"><circle cx="40" cy="40" r="4"/><circle cx="600" cy="40" r="4"/><circle cx="40" cy="300" r="4"/><circle cx="600" cy="300" r="4"/></g>' +
+      '<rect x="-20" y="372" width="700" height="60" fill="url(#hz' + uid + ')" opacity=".85"/>' +
+      '<g transform="rotate(' + tilt + ' 320 210)" filter="url(#shadow' + uid + ')">' +
+      '<rect x="108" y="86" width="424" height="236" rx="16" fill="url(#box' + uid + ')" stroke="#8d887d" stroke-width="2"/>' +
+      '<text x="132" y="118" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#2f3337" letter-spacing="1.5">BALANZA CAMIONERA · SJ-01</text>' +
+      '<text x="508" y="260" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#5d6166">Máx 80 000 kg · e = 20 kg</text>' +
+      '<rect x="132" y="132" width="376" height="104" rx="8" fill="#0b120e" stroke="#4b4f4a" stroke-width="3"/>' +
+      (oos
+        ? '<text x="320" y="200" text-anchor="middle" font-family="Consolas, monospace" font-size="54" fill="#1f3a26" letter-spacing="6">- - - - -</text>'
+        : '<text x="462" y="208" text-anchor="end" font-family="Consolas, \'Courier New\', monospace" font-size="58" font-weight="700" fill="#8dff7a" letter-spacing="4" filter="url(#glow' + uid + ')">' + digits + '</text>' +
+          '<text x="470" y="208" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#8dff7a" opacity=".85">kg</text>') +
+      '<g font-family="Arial, sans-serif" font-size="11" fill="#3b3f43" font-weight="700">' +
+      '<circle cx="146" cy="256" r="5" fill="' + (oos ? '#55302e' : '#5dff4a') + '"/><text x="157" y="260">ESTABLE</text>' +
+      '<circle cx="230" cy="256" r="5" fill="#2f3b2f"/><text x="241" y="260">CERO</text>' +
+      '<circle cx="300" cy="256" r="5" fill="' + (oos ? '#2f3b2f' : '#5dff4a') + '"/><text x="311" y="260">' + (kind === 'tara' ? 'TARA' : 'BRUTO') + '</text>' +
+      '</g>' +
+      '<g fill="#4b4f54"><rect x="146" y="276" width="62" height="26" rx="6"/><rect x="220" y="276" width="62" height="26" rx="6"/><rect x="294" y="276" width="62" height="26" rx="6"/><rect x="368" y="276" width="62" height="26" rx="6"/></g>' +
+      '<g font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#e9e6df" text-anchor="middle"><text x="177" y="293">CERO</text><text x="251" y="293">TARA</text><text x="325" y="293">IMPR</text><text x="399" y="293">MENÚ</text></g>' +
+      '<circle cx="486" cy="289" r="14" fill="#b3261e" stroke="#7a1712" stroke-width="2"/>' +
+      '</g>' +
+      (oos
+        ? '<g transform="rotate(-7 330 170)"><rect x="196" y="128" width="268" height="92" fill="#fbfaf4" stroke="#d8d4c6"/>' +
+          '<rect x="300" y="118" width="60" height="18" fill="#d9c98f" opacity=".85"/>' +
+          '<text x="330" y="168" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="24" font-weight="900" fill="#c62828">FUERA DE</text>' +
+          '<text x="330" y="200" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="24" font-weight="900" fill="#c62828">SERVICIO</text></g>'
+        : '') +
+      '<rect width="640" height="420" fill="url(#flash' + uid + ')"/>' +
+      '<rect width="640" height="420" filter="url(#grain' + uid + ')"/>' +
+      '<rect width="640" height="420" fill="url(#vig' + uid + ')"/>' +
+      '<g font-family="Consolas, \'Courier New\', monospace" font-size="17" font-weight="700" fill="#ffb347" stroke="#000" stroke-width=".6" paint-order="stroke">' +
+      '<text x="620" y="400" text-anchor="end">' + esc(photoStamp(k, kind)) + '</text>' +
+      '<text x="20" y="400">' + esc(k.camion || '') + ' · ' + esc(k.id) + '</text>' +
+      '</g>' +
+      '</svg>';
+  }
+
+  function openPhotoLightbox(svg, caption) {
+    var lb = document.createElement('div');
+    lb.className = 'tkd-lightbox';
+    lb.innerHTML = '<figure>' + svg + '<figcaption>' + esc(caption) + ' · clic o Esc para cerrar</figcaption></figure>';
+    function close() { lb.remove(); document.removeEventListener('keydown', onKey, true); }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } }
+    lb.addEventListener('click', close);
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(lb);
+  }
+
+  function openTicketDetail(k) {
+    if (!k) return;
+    function field(label, value) {
+      return '<div class="tkd-field"><span>' + esc(label) + '</span><strong>' + (value == null || value === '' ? '<em>—</em>' : esc(value)) + '</strong></div>';
+    }
+    var ref = { id: k.id, camion: k.camion, fecha: k.fecha };
+    var zooms = {};
+    function card(kind, titulo, w, empty) {
+      var photo = fotoPesaje(w, ref, kind);
+      if (w) zooms[kind] = { photo: photo, caption: 'Ticket ' + k.id + ' · ' + titulo + ' · ' + photoStamp(k, kind) + ' · ' + lecturaTxt(w) };
+      return pesajeCard({ title: titulo, w: w, photo: photo, key: kind, empty: empty });
+    }
+
+    var html =
+      '<div class="modal__head"><div><h3>Detalle del ticket ' + esc(k.id) + '</h3>' +
+      '<p>' + esc((k.camion || '') + (k.operadorCamion ? ' · ' + k.operadorCamion : '')) + '</p></div>' +
+      '<div class="tkd-head-badges">' + ticketEstadoBadge(k) + syncBadge(syncStatusFor(k.id)) + '</div></div>' +
+      '<div class="modal__body"><div class="pc-wrap">' +
+      '<div class="tkd-flat">' +
+      field('Tolva', k.tolva) + field('Fecha', k.fecha) + field('Hora carguío', k.horaCarguio) + field('Turno', k.turno) +
+      field('Nivel', k.nivel) + field('Veta', k.veta) + field('Zona', k.zona) + field('Labor', k.labor) +
+      field('Equipo Scoop', k.equipoScoop) + field('Op. Scoop', k.operadorScoop) + field('Camión', k.camion) + field('Op. Camión', k.operadorCamion) +
+      field('Tipo de material', k.tipoMaterial) + field('Punto intermedio', k.puntoIntermedio) + field('Destino', k.destino) +
+      '</div>' +
+      '<div class="pc-grid">' +
+      card('tara', 'Pesaje · Tara', k.tara, 'Sin pesaje de tara.') +
+      card('cargado', 'Pesaje · Cargado', k.pesajeCargado, 'Sin pesaje cargado.') +
+      '</div>' +
+      pesajeNeto(k.neto, k.estado !== 'Abierto' ? 'Por regularizar' : '—') +
+      '</div></div>' +
+      '<div class="modal__foot"><button class="btn btn-primary js-modal-cancel">Cerrar</button></div>';
+
+    var overlay = openModal(html);
+    $('.modal', overlay).classList.add('modal-ticket');
+    bindPesajeZoom(overlay, zooms);
+  }
+
+  /* =======================================================================
      Registro de renderers en el shell
      ======================================================================= */
   document.addEventListener('DOMContentLoaded', function () {
     Shell.registerRenderer('dashboard', renderDashboard);
     Shell.registerRenderer('misviajes', renderMisViajes);
     Shell.registerRenderer('tablets', renderTablets);
+    Shell.registerRenderer('historial', renderHistorial);
     Shell.registerRenderer('garita', renderGarita);
     Shell.registerRenderer('terceros', renderTerceros);
   });

@@ -23,6 +23,8 @@
   var ICON = {
     home: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 11.5 12 4l8 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9.5h12V10" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 19.5v-6h4v6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
     truck: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 7h11v9H3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="7.5" cy="18" r="1.6" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="18" r="1.6" stroke="currentColor" stroke-width="1.6"/></svg>',
+    scale: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 4v16M7 20h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5 7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5 7 2.5 13a2.5 2.5 0 0 0 5 0L5 7ZM19 7l-2.5 6a2.5 2.5 0 0 0 5 0L19 7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+    download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 4v11M12 15l-4.5-4.5M12 15l4.5-4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     tablet: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="3" width="14" height="18" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M11 18h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     gate: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 10 21 6v3L3 13z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 12.3V20M18 8.6V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     users: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8.5" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c1-3 3-4.5 5.5-4.5S13.5 16 14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M15.3 14.2c2 .1 3.4 1.4 4.2 3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -111,7 +113,7 @@
      Modal de pesaje / captura OCR (RF041–RF055)
      --------------------------------------------------------------------- */
   function openWeighModal(cfg, onConfirm) {
-    var state = { photo: false, ocrDone: false, ocrValue: null, simulatedWeight: null, outOfService: false, timer: null, fileName: null };
+    var state = { photo: false, photoUrl: null, ocrDone: false, ocrValue: null, simulatedWeight: null, outOfService: false, timer: null, fileName: null };
 
     var html =
       '<div class="modal__head"><div><h3>' + esc(cfg.title) + '</h3>' +
@@ -143,6 +145,7 @@
     function renderCaptureUI(isEvidence) {
       state.outOfService = !!isEvidence;
       state.photo = false;
+      state.photoUrl = null;
       state.ocrDone = false;
       state.ocrValue = null;
       state.simulatedWeight = null;
@@ -190,6 +193,7 @@
     function runCapture(photoDataUrl, isEvidence, fileName, subText) {
       if (state.timer) { clearInterval(state.timer); state.timer = null; }
       state.photo = true;
+      state.photoUrl = photoDataUrl || null; // foto real subida desde el equipo (si la hay)
 
       if (isEvidence) {
         // Balanza fuera de servicio: Foto como EVIDENCIA
@@ -261,6 +265,7 @@
           var simWeight = S.simulateWeight(cfg.kind);
           state.simulatedWeight = simWeight;
           state.fileName = null;
+          state.photoUrl = null;
 
           captureZone.innerHTML =
             '<div class="display-frame has-photo" id="display-frame">' +
@@ -364,6 +369,7 @@
         estimated: false,
         outOfService: isOOS,
         hasPhoto: state.photo,
+        photoUrl: state.photoUrl,
         fileName: state.fileName
       });
     });
