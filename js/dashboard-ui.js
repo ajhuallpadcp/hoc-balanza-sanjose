@@ -66,7 +66,10 @@
     if (!stack) return;
     var el = document.createElement('div');
     el.className = 'toast' + (type ? ' is-' + type : '');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     el.textContent = message;
+    // Máximo 2 mensajes a la vez: el más antiguo se descarta para no tapar la pantalla
+    while (stack.children.length >= 2) stack.removeChild(stack.firstChild);
     stack.appendChild(el);
     setTimeout(function () {
       el.style.opacity = '0';
@@ -228,7 +231,7 @@
           '<span class="ocr-check-badge">' + ICON.check + '</span>' +
           '<span>Fotografía de evidencia registrada</span>' +
           '</div>' +
-          '<p class="form-hint" style="margin-top:6px;color:var(--gray-600);">Se ha registrado la evidencia fotográfica para auditoría certificando que la balanza está fuera de servicio. No se registrará pesaje.</p>' +
+          '<p class="form-hint" style="margin-top:6px;color:var(--gray-600);">Se ha registrado la evidencia fotográfica para auditoría certificando que la balanza está fuera de servicio.</p>' +
           '</div>';
 
         confirmBtn.disabled = false;

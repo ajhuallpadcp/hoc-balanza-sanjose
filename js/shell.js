@@ -36,6 +36,8 @@
         ICON[item.icon] + '<span>' + esc(item.label) + '</span></li>';
     }).join('');
     $('#sidebar-nav').innerHTML = html;
+    // Con una sola sección la barra de navegación inferior (tablet vertical) no aporta: se oculta
+    $('#app-shell').classList.toggle('nav-single', items.length <= 1);
     UI.on('[data-nav]', 'click', function () { navigateTo(this.getAttribute('data-nav')); }, $('#sidebar-nav'));
   }
 

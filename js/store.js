@@ -83,63 +83,65 @@
   }
   function pad2(n) { return String(n).padStart(2, '0'); }
 
-  function buildRegistrosSeed() {
-    // PRNG con semilla fija (mulberry32)
-    var a = 20261104;
-    function rnd() {
-      a |= 0; a = a + 0x6D2B79F5 | 0;
-      var t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    }
-    function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
-    function between(min, max) { return Math.round(min + rnd() * (max - min)); }
+  var EVIDENCIA_FILE = 'evidencia_balanza_fueraservicio.jpg';
 
-    var list = [];
+  // Pesaje con balanza fuera de servicio: no hay lectura OCR; el sistema genera un peso
+  // estimado (oculto para el conductor) y la foto registrada es la evidencia.
+  function pesajeFueraServicio(estimado, ts) {
+    return { value: estimado, ocrValue: null, estimated: true, outOfService: true, hasPhoto: true, fileName: EVIDENCIA_FILE, ts: ts };
+  }
+
+  function buildRegistrosSeed() {
     var today = new Date();
-    for (var back = 6; back >= 0; back--) {
-      var day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
-      var fecha = pad2(day.getDate()) + '/' + pad2(day.getMonth() + 1) + '/' + day.getFullYear();
-      FLOTA_PROPIA.forEach(function (f) {
-        var tara = { value: f.taraBase + between(-140, 140), ts: fecha + ' 06:5' + between(0, 9) };
-        tara.ocrValue = tara.value;
-        if (back === 2 && f.camion === 'V-108') { tara.ocrValue = tara.value - 60; tara.manual = true; }
-        var viajes = between(1, 3);
-        var hora = between(7, 9);
-        for (var v = 0; v < viajes; v++) {
-          var min = between(0, 59);
-          var material = rnd() < 0.68 ? 'Mineral' : 'Desmonte';
-          var destino = material === 'Mineral' ? pick(['Cancha de Mineral', 'Chancadora Primaria']) : 'Botadero Sur';
-          var r = rnd();
-          var cargado;
-          if (r < 0.06) cargado = { value: null, outOfService: true };
-          else if (r < 0.14) cargado = { value: tara.value + between(25500, 33000), estimated: true };
-          else cargado = { value: tara.value + between(25500, 34500) };
-          // Hora del pesaje cargado: 12 minutos después del carguío
-          var tm = hora * 60 + min + 12;
-          cargado.ts = fecha + ' ' + pad2(Math.floor(tm / 60)) + ':' + pad2(tm % 60);
-          if (cargado.value != null && !cargado.estimated) {
-            cargado.ocrValue = cargado.value;
-            if (min % 7 === 0) { cargado.ocrValue = cargado.value - (min % 2 ? 1 : -1) * (200 + min * 10); cargado.manual = true; }
-          }
-          var abierto = back === 0 && v === viajes - 1 && rnd() < 0.5;
-          list.push({
-            tolva: pick(CAT.tolvas), fecha: fecha, horaCarguio: pad2(hora) + ':' + pad2(min), turno: turnoFor(hora),
-            nivel: pick(CAT.niveles), veta: pick(CAT.vetas), zona: pick(CAT.zonas), labor: pick(CAT.labores),
-            equipoScoop: pick(CAT.equiposScoop), operadorScoop: pick(CAT.operadoresScoop),
-            destino: destino, camion: f.camion, operadorCamion: f.operador,
-            tipoMaterial: material, puntoIntermedio: pick(CAT.puntosIntermedios),
-            tara: tara,
-            pesajeCargado: abierto ? null : cargado,
-            neto: (abierto || cargado.value == null) ? null : cargado.value - tara.value,
-            // Balanza fuera de servicio o peso estimado: el ticket queda En mantenimiento
-            estado: abierto ? 'Abierto' : (cargado.outOfService || cargado.estimated) ? 'En mantenimiento' : 'Cerrado',
-            descarga: abierto ? null : fecha + ' ' + pad2(hora + 1) + ':' + pad2(min)
-          });
-          hora += between(2, 3);
-        }
-      });
+    function fechaDe(back) {
+      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
+      return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear();
     }
+    function addMin(hhmm, m) {
+      var t = Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3)) + m;
+      return pad2(Math.floor(t / 60) % 24) + ':' + pad2(t % 60);
+    }
+    // 10 tickets de ejemplo: [díasAtrás, camión (índice flota), hora carguío, material, destino, carga neta (kg), extra]
+    // extra: ocr = lectura OCR distinta (el conductor corrigió el peso) · oos = 'tara' | 'cargado' · abierto
+    var defs = [
+      [2, 0, '07:25', 'Mineral', 'Cancha de Mineral', 31840],
+      [2, 1, '07:50', 'Desmonte', 'Botadero Sur', 28760],
+      [2, 2, '09:40', 'Mineral', 'Chancadora Primaria', 34120, { ocr: 33780 }],
+      [2, 3, '10:15', 'Mineral', 'Cancha de Mineral', 30960, { oos: 'cargado' }],
+      [1, 0, '07:35', 'Mineral', 'Chancadora Primaria', 32990],
+      [1, 1, '08:05', 'Mineral', 'Cancha de Mineral', 30450, { ocr: 30910 }],
+      [1, 2, '08:20', 'Desmonte', 'Botadero Sur', 27310, { oos: 'tara' }],
+      [1, 3, '11:10', 'Desmonte', 'Botadero Sur', 27980],
+      [0, 0, '07:30', 'Mineral', 'Cancha de Mineral', 33410],
+      [0, 1, '08:15', 'Mineral', 'Chancadora Primaria', null, { abierto: true }]
+    ];
+    var list = defs.map(function (d, i) {
+      var f = FLOTA_PROPIA[d[1]], fecha = fechaDe(d[0]), hora = d[2], x = d[6] || {};
+      var taraVal = f.taraBase + ((i * 37) % 120) - 60;
+      var taraTs = fecha + ' 06:5' + (i % 10);
+      var tara = x.oos === 'tara' ? pesajeFueraServicio(taraVal, taraTs)
+        : { value: taraVal, ocrValue: taraVal, hasPhoto: true, ts: taraTs };
+      var cargado = null;
+      if (!x.abierto) {
+        var bruto = taraVal + d[5];
+        var cTs = fecha + ' ' + addMin(hora, 12); // 12 minutos después del carguío
+        cargado = x.oos === 'cargado' ? pesajeFueraServicio(bruto, cTs)
+          : { value: bruto, ocrValue: x.ocr != null ? taraVal + x.ocr : bruto, manual: x.ocr != null, hasPhoto: true, ts: cTs };
+      }
+      return {
+        tolva: CAT.tolvas[i % 4], fecha: fecha, horaCarguio: hora, turno: turnoFor(Number(hora.slice(0, 2))),
+        nivel: CAT.niveles[i % 3], veta: CAT.vetas[i % 4], zona: CAT.zonas[i % 3], labor: CAT.labores[(i + 1) % 4],
+        equipoScoop: CAT.equiposScoop[i % 3], operadorScoop: CAT.operadoresScoop[i % 3],
+        destino: d[4], camion: f.camion, operadorCamion: f.operador,
+        tipoMaterial: d[3], puntoIntermedio: CAT.puntosIntermedios[i % 3],
+        tara: tara,
+        pesajeCargado: cargado,
+        neto: cargado ? cargado.value - tara.value : null,
+        // Balanza fuera de servicio (peso estimado): el ticket queda En mantenimiento
+        estado: x.abierto ? 'Abierto' : x.oos ? 'En mantenimiento' : 'Cerrado',
+        descarga: x.abierto ? null : fecha + ' ' + addMin(hora, 60)
+      };
+    });
     // IDs correlativos por orden cronológico
     list.sort(function (x, y) { return (x.fecha.split('/').reverse().join('') + x.horaCarguio).localeCompare(y.fecha.split('/').reverse().join('') + y.horaCarguio); });
     list.forEach(function (k) { k.id = nextTicketId(k.tipoMaterial, k.fecha.slice(6)); });
@@ -302,6 +304,15 @@
     // Valor estimado por "promedio histórico" simulado ante balanza fuera de servicio
     estimateWeight: function (kind) {
       return this.simulateWeight(kind === 'cargado' ? 'cargado' : (kind === 'vacio' ? 'vacio' : 'tara'));
+    },
+    // Completa un pesaje registrado con balanza fuera de servicio: sin OCR, peso estimado por el sistema
+    applyFueraServicio: function (res, kind) {
+      if (!res || !res.outOfService) return res;
+      res.value = this.estimateWeight(kind);
+      res.ocrValue = null;
+      res.estimated = true;
+      res.fileName = res.fileName || EVIDENCIA_FILE;
+      return res;
     },
 
     // Reinicia el estado transaccional para volver a ejecutar la demo desde cero.

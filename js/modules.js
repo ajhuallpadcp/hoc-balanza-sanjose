@@ -38,14 +38,23 @@
   function ocrDe(w) { return !w ? null : w.ocrValue != null ? w.ocrValue : (w.manual || w.estimated ? null : w.value); }
   function fmtKg(v) { return v == null ? '—' : v.toLocaleString('es-PE') + ' kg'; }
   // rows: filas adicionales del pesaje [etiqueta, valor] (fecha y hora, descarga / carga)
-  function lecturaHtml(w, rows) {
+  // ocultarEstimado: vista del conductor, que no ve el peso estimado ante balanza fuera de servicio
+  function lecturaHtml(w, rows, ocultarEstimado) {
     if (!w) return '';
     var meta = (rows || []).map(function (r) {
       return '<div class="lect__row lect__row--meta"><span>' + ICON.calendar + esc(r[0]) + '</span><strong>' + esc(r[1]) + '</strong></div>';
     }).join('');
     if (w.outOfService) {
-      return '<div class="lect is-oos"><div class="lect__note lect__note--oos">' + ICON.warn +
-        '<span>Balanza fuera de servicio · sin lectura OCR ni peso enviado. La foto queda como evidencia.</span></div>' + meta + '</div>';
+      if (ocultarEstimado || w.value == null) {
+        return '<div class="lect is-oos"><div class="lect__note lect__note--oos">' + ICON.warn +
+          '<span>Balanza fuera de servicio · sin lectura OCR. La foto queda como evidencia.</span></div>' + meta + '</div>';
+      }
+      return '<div class="lect is-oos">' +
+        '<div class="lect__row lect__row--ocr"><span>' + ICON.scale + 'Lectura de balanza (OCR)</span><strong><em>Fuera de servicio</em></strong></div>' +
+        '<div class="lect__row lect__row--drv"><span>' + ICON.warn + 'Peso estimado por el sistema</span><strong>' + esc(fmtKg(w.value)) + '</strong></div>' +
+        meta +
+        '<div class="lect__note lect__note--oos">' + ICON.warn + '<span>Balanza fuera de servicio: el peso fue estimado por el sistema.</span></div>' +
+        '</div>';
     }
     var ocr = ocrDe(w);
     var editado = !!w.manual && ocr != null && w.value !== ocr;
@@ -59,9 +68,9 @@
       meta + note + '</div>';
   }
   // Texto corto para pies de foto / lightbox
-  function lecturaTxt(w) {
+  function lecturaTxt(w, ocultarEstimado) {
     if (!w) return '';
-    if (w.outOfService) return 'Balanza fuera de servicio (evidencia)';
+    if (w.outOfService) return 'Evidencia · balanza fuera de servicio' + (!ocultarEstimado && w.value != null ? ' · Peso estimado ' + fmtKg(w.value) : '');
     var ocr = ocrDe(w);
     if (w.estimated) return 'Peso estimado ' + fmtKg(w.value);
     return 'OCR ' + fmtKg(ocr) + ' · Conductor ' + fmtKg(w.value);
@@ -158,9 +167,13 @@
 
       '<div class="card"><div class="card__head">' +
       '<div><h3>Mis viajes del turno</h3><p>Ticket de extracción</p></div>' +
-      '<button class="btn btn-primary btn-sm" id="btn-new-ticket"' + (!t.tara || hasOpenTicket ? ' disabled title="' + (!t.tara ? 'Registra la tara primero' : 'Ya existe un ticket abierto') + '"' : '') + '>' + ICON.plus + ' Nuevo viaje</button>' +
+      '<button class="btn btn-primary" id="btn-new-ticket"' + (!t.tara || hasOpenTicket ? ' disabled' : '') + '>' + ICON.plus + ' Nuevo viaje</button>' +
       '</div>' +
-      '<div class="card__body" style="padding:0;">' +
+      // En tablet no hay tooltips: el motivo de un botón deshabilitado se muestra como texto visible
+      (t.activo && (!t.tara || hasOpenTicket)
+        ? '<p class="hint-bar">' + ICON.info + '<span>' + (!t.tara ? 'Registra la tara del camión para crear un viaje.' : 'Cierra el viaje abierto para crear uno nuevo.') + '</span></p>'
+        : '') +
+      '<div class="card__body">' +
       renderTicketsTable() +
       '</div></div>';
 
@@ -171,31 +184,33 @@
     if (S.tickets.length === 0) {
       return '<div class="empty-state">' + ICON.empty + '<p>No se han creado viajes en este turno todavía.</p></div>';
     }
-    var rows = S.tickets.map(function (k) {
+    // Tarjetas táctiles (no tabla): en tablet la acción del siguiente paso siempre queda visible
+    var dash = '<em>—</em>';
+    var cards = S.tickets.map(function (k) {
       var action;
       if (!k.pesajeCargado) {
-        action = '<button class="btn btn-outline btn-sm js-ticket-cargado" data-id="' + k.id + '">Pesaje cargado</button>';
+        action = '<button class="btn btn-gold js-ticket-cargado" data-id="' + k.id + '">' + ICON.scale + ' Registrar pesaje cargado</button>';
       } else if (!k.descarga) {
-        action = '<button class="btn btn-outline btn-sm js-ticket-descarga" data-id="' + k.id + '">Descarga y cierre</button>';
+        action = '<button class="btn btn-gold js-ticket-descarga" data-id="' + k.id + '">' + ICON.check + ' Descarga y cierre</button>';
       } else {
-        action = '<button class="icon-btn js-ticket-view" data-id="' + k.id + '" title="Ver detalle">' + ICON.eye + '</button>';
+        action = '<button class="btn btn-outline js-ticket-view" data-id="' + k.id + '">' + ICON.eye + ' Ver detalle</button>';
       }
-      return '<tr>' +
-        '<td><strong>' + k.id + '</strong></td>' +
-        '<td>' + esc(k.tolva) + '</td>' +
-        '<td>' + esc(k.tipoMaterial) + '</td>' +
-        '<td>' + esc(k.destino) + '</td>' +
-        '<td class="num">' + weighSummary(k.pesajeCargado) + '</td>' +
-        '<td class="num">' + (k.neto != null ? k.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
-        '<td>' + (k.descarga ? esc(k.descarga) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
-        '<td class="text-center">' + (k.estado === 'Abierto' ? '<span class="badge badge-info">Abierto</span>' : '<span class="badge badge-success">Cerrado</span>') + '</td>' +
-        '<td class="text-center">' + syncBadge(syncStatusFor(k.id)) + '</td>' +
-        '<td class="text-center"><div class="row-actions">' + action + '</div></td>' +
-        '</tr>';
+      // El conductor no ve el peso estimado: si hubo balanza fuera de servicio el neto queda oculto
+      var neto = k.neto != null && !ticketFueraServicio(k) ? esc(kgTxt(k.neto)) : dash;
+      return '<article class="trip-card">' +
+        '<div class="trip-card__head">' +
+        '<strong>' + esc(k.id) + '</strong>' + ticketEstadoBadge(k) + syncBadge(syncStatusFor(k.id)) +
+        '<span class="trip-card__route">' + esc(k.tipoMaterial) + ' · ' + esc(k.tolva) + ' → ' + esc(k.destino) + '</span>' +
+        '</div>' +
+        '<dl class="trip-card__data">' +
+        '<div><dt>Pesaje cargado</dt><dd>' + weighSummary(k.pesajeCargado) + '</dd></div>' +
+        '<div><dt>Peso neto</dt><dd>' + neto + '</dd></div>' +
+        '<div><dt>Descarga</dt><dd>' + (k.descarga ? esc(k.descarga) : dash) + '</dd></div>' +
+        '</dl>' +
+        '<div class="trip-card__action">' + action + '</div>' +
+        '</article>';
     }).join('');
-    return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Ticket</th><th>Tolva</th><th>Material</th><th>Destino</th><th>Pesaje cargado</th><th>Neto</th><th>Descarga</th><th class="text-center">Estado</th><th class="text-center">Sync</th><th class="th-actions text-center">Acciones</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    return '<div class="trip-list">' + cards + '</div>';
   }
 
   function attachMisViajesHandlers(root) {
@@ -230,6 +245,7 @@
     var btnTara = $('#btn-register-tara', root);
     if (btnTara) btnTara.addEventListener('click', function () {
       openWeighModal({ title: 'Registrar tara', subtitle: 'Camión ' + S.turno.camion, kind: 'tara', allowOutOfService: true }, function (res) {
+        S.applyFueraServicio(res, 'tara');
         res.ts = S.nowStr();
         S.turno.tara = res;
         S.enqueueSync('Tara', 'Tara ' + S.turno.camion);
@@ -246,11 +262,13 @@
     UI.on('.js-ticket-cargado', 'click', function () {
       var id = this.getAttribute('data-id');
       openWeighModal({ title: 'Pesaje cargado', subtitle: 'Ticket ' + id, kind: 'cargado', allowOutOfService: true, hideEstimatedValue: true }, function (res) {
+        S.applyFueraServicio(res, 'cargado');
         res.ts = S.nowStr();
         var k = S.tickets.find(function (x) { return x.id === id; });
         k.pesajeCargado = res;
-        var tara = S.turno.tara;
-        k.neto = (res.outOfService || res.value == null || !tara || tara.value == null) ? null : Math.max(0, res.value - tara.value);
+        var tara = k.tara || S.turno.tara;
+        // Con balanza fuera de servicio el neto se calcula con el peso estimado (visible solo para el supervisor)
+        k.neto = (res.value == null || !tara || tara.value == null) ? null : Math.max(0, res.value - tara.value);
         S.enqueueSync('Pesaje cargado', id);
         var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + res.value.toLocaleString('es-PE') + ' kg' : '');
         S.addActivity('Pesaje cargado', 'Ticket ' + id + actDet, 'ok');
@@ -264,17 +282,18 @@
       confirmDialog({ title: 'Registrar descarga y cerrar ticket', subtitle: 'Ticket ' + id, body: '<p style="font-size:15.5px;color:var(--gray-600);">Se registrará la fecha y hora de descarga y el ticket pasará a estado Cerrado.</p>' }, function () {
         var k = S.tickets.find(function (x) { return x.id === id; });
         k.descarga = S.nowStr();
-        k.estado = 'Cerrado';
+        // Balanza fuera de servicio (peso estimado): el ticket queda En mantenimiento para regularizar
+        k.estado = ticketFueraServicio(k) ? 'En mantenimiento' : 'Cerrado';
         S.enqueueSync('Descarga', id);
-        S.addActivity('Descarga y cierre', 'Ticket ' + id + ' cerrado', 'ok');
-        toast('Ticket cerrado correctamente.', 'success');
+        S.addActivity('Descarga y cierre', 'Ticket ' + id + (k.estado === 'Cerrado' ? ' cerrado' : ' en mantenimiento (balanza fuera de servicio)'), 'ok');
+        toast(k.estado === 'Cerrado' ? 'Ticket cerrado correctamente.' : 'Descarga registrada. El ticket queda En mantenimiento por balanza fuera de servicio.', 'success');
         Shell.refreshCurrent();
       });
     }, root);
 
     UI.on('.js-ticket-view', 'click', function () {
       var id = this.getAttribute('data-id');
-      openTicketDetail(S.tickets.find(function (x) { return x.id === id; }));
+      openTicketDetail(S.tickets.find(function (x) { return x.id === id; }), { conductor: true });
     }, root);
   }
 
@@ -1120,19 +1139,18 @@
         '<div class="row-menu__panel" role="menu" hidden>' + menuItems + '</div>' +
         '</div>';
       return '<tr>' +
-        '<td style="white-space:nowrap;"><strong>' + esc(e.ticket) + '</strong></td>' +
-        '<td style="white-space:nowrap;"><strong>' + esc(e.placa) + '</strong></td>' +
-        '<td>' + esc(e.empresa) + '</td>' +
-        '<td>' + esc(e.conductor) + '</td>' +
+        '<td style="white-space:nowrap;"><span class="cell-main"><strong>' + esc(e.ticket) + '</strong></span><span class="cell-sub">' + esc(e.placa) + '</span></td>' +
+        '<td><span class="cell-main">' + esc(e.empresa) + '</span><span class="cell-sub">' + esc(e.conductor) + '</span></td>' +
         '<td class="text-center">' + tabletCell + '</td>' +
         '<td class="text-center">' + e.viajes.length + '</td>' +
         '<td class="text-center">' + estadiaBadge(e) + '</td>' +
-        '<td class="text-center"><div class="row-actions"><button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle del ticket">' + ICON.eye + '</button></div></td>' +
-        '<td class="text-center"><div class="row-actions row-actions--garita">' + primary + overflow + '</div></td>' +
+        '<td class="text-center"><div class="row-actions row-actions--garita">' +
+        '<button class="icon-btn js-estadia-view" data-id="' + e.id + '" title="Ver detalle del ticket" aria-label="Ver detalle del ticket ' + esc(e.ticket) + '">' + ICON.eye + '</button>' +
+        primary + overflow + '</div></td>' +
         '</tr>';
     }).join('');
     return '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-      '<th>Ticket</th><th>Patente</th><th>Empresa</th><th>Conductor</th><th class="text-center">Tablet</th><th class="text-center">Nro. Viajes</th><th class="text-center">Estado</th><th class="text-center">Detalle</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
+      '<th>Ticket / Patente</th><th>Empresa / Conductor</th><th class="text-center">Tablet</th><th class="text-center">Viajes</th><th class="text-center">Estado</th><th class="th-actions th-actions--garita text-center">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -1181,11 +1199,12 @@
     var rows = [['Fecha y hora', o.w.ts || '—']].concat(o.extra || []);
     return '<section class="pc"><h4>' + esc(o.title) + '</h4>' +
       '<button type="button" class="tkd-photo__main js-pc-zoom" data-key="' + esc(o.key) + '" title="Ampliar foto">' + o.photo +
-      '<span class="tkd-photo__zoom">' + ICON.eye + ' Ampliar</span></button>' +
-      lecturaHtml(o.w, rows) + '</section>';
+      '<span class="tkd-photo__zoom">' + ICON.eye + (o.w.outOfService ? ' Ver evidencia' : ' Ampliar') + '</span></button>' +
+      lecturaHtml(o.w, rows, o.ocultarEstimado) + '</section>';
   }
-  function pesajeNeto(neto, sinNeto) {
-    return '<div class="tkd-weight tkd-weight--net pc-net"><span>Peso neto</span><strong>' +
+  // estimado: el neto se calculó con un peso estimado (balanza fuera de servicio)
+  function pesajeNeto(neto, sinNeto, estimado) {
+    return '<div class="tkd-weight tkd-weight--net pc-net"><span>Peso neto' + (estimado && neto != null ? ' <span class="badge badge-warning" style="margin-left:4px;">Estimado</span>' : '') + '</span><strong>' +
       (neto != null ? esc(kgTxt(neto)) : esc(sinNeto || '—')) + '</strong>' +
       '</div>';
   }
@@ -1259,7 +1278,6 @@
     var p = viajePesajes(v);
     var ref = { id: e.ticket, camion: e.placa, fecha: '01/01/' + ((e.ingresoIso || '').slice(0, 4) || new Date().getFullYear()) };
     var oosEntrada = p.entrada && p.entrada.outOfService;
-    var intermedioLabel = p.entradaEst === 'vacio' ? 'Carga' : 'Descarga';
     var zooms = {};
     function card(lado, w, est, empty, extra) {
       var titulo = 'Pesaje de ' + lado + (est ? ' · ' + ESTADO_PESAJE[est] : '');
@@ -1274,13 +1292,11 @@
       '<div class="modal__body"><div class="pc-wrap">' +
       '<div class="pc-grid">' +
       card('entrada', p.entrada, p.entradaEst, 'Sin pesaje de entrada.') +
-      // La descarga / carga ocurre entre ambos pesajes y se registra junto con el pesaje de salida
-      card('salida', p.salida, p.salidaEst, oosEntrada ? 'Sin pesaje de salida: la balanza estaba fuera de servicio.' : 'Sin pesaje de salida.',
-        v.intermedio ? [[intermedioLabel, v.intermedio]] : []) +
+      card('salida', p.salida, p.salidaEst, oosEntrada ? 'Sin pesaje de salida: la balanza estaba fuera de servicio.' : 'Sin pesaje de salida.') +
       '</div>' +
       pesajeNeto(v.neto) +
       '</div></div>' +
-      '<div class="modal__foot"><button class="btn btn-primary js-modal-cancel">Cerrar</button></div>';
+      '<div class="modal__foot"><button class="btn btn-outline js-modal-cancel">Cerrar</button></div>';
 
     var overlay = openModal(html);
     $('.modal', overlay).classList.add('modal-viaje');
@@ -1757,12 +1773,16 @@
   }
 
   // Peso compacto para la grilla: valor en kg y una marca corta si fue estimado o sin lectura
+  function ticketFueraServicio(k) {
+    return !!((k.tara && k.tara.outOfService) || (k.pesajeCargado && k.pesajeCargado.outOfService));
+  }
+  // Peso compacto para la grilla del supervisor: con balanza fuera de servicio se muestra el peso estimado
   function histWeight(w) {
-    if (!w) return '<span style="color:var(--gray-400)">—</span>';
-    if (w.outOfService) return '<span class="badge badge-warning" title="Balanza fuera de servicio · Evidencia en auditoría">Sin lectura</span>';
-    if (w.value == null) return '<span style="color:var(--gray-400)">—</span>';
-    return esc(kgTxt(w.value)) + (w.estimated ? '<br><span class="badge badge-warning hist-flag">Estimado</span>' : '') +
-      '';
+    if (!w || w.value == null) return '<span style="color:var(--gray-400)">—</span>';
+    var flag = w.outOfService
+      ? '<br><span class="badge badge-warning hist-flag" title="Balanza fuera de servicio · peso estimado por el sistema · foto de evidencia">Estimado</span>'
+      : w.estimated ? '<br><span class="badge badge-warning hist-flag">Estimado</span>' : '';
+    return esc(kgTxt(w.value)) + flag;
   }
 
   function renderHistorialTable(list) {
@@ -1778,7 +1798,7 @@
         '</td>' +
         '<td class="num hist-nowrap">' + histWeight(k.tara) + '</td>' +
         '<td class="num hist-nowrap">' + histWeight(k.pesajeCargado) + '</td>' +
-        '<td class="num hist-nowrap"><strong>' + (k.neto != null ? esc(kgTxt(k.neto)) : '<span style="color:var(--gray-400)">' + (k.estado !== 'Abierto' ? 'Por regularizar' : 'Pendiente') + '</span>') + '</strong></td>' +
+        '<td class="num hist-nowrap"><strong>' + (k.neto != null ? esc(kgTxt(k.neto)) + (ticketFueraServicio(k) ? '<br><span class="badge badge-warning hist-flag">Estimado</span>' : '') : '<span style="color:var(--gray-400)">' + (k.estado !== 'Abierto' ? 'Por regularizar' : 'Pendiente') + '</span>') + '</strong></td>' +
         '<td class="text-center">' + ticketEstadoBadge(k) + '</td>' +
         '<td class="text-center"><button type="button" class="icon-btn js-hist-view" data-id="' + esc(k.id) + '" title="Ver detalle del ticket" aria-label="Ver detalle del ticket ' + esc(k.id) + '">' + ICON.eye + '</button></td>' +
         '</tr>';
@@ -1867,8 +1887,10 @@
     document.body.appendChild(lb);
   }
 
-  function openTicketDetail(k) {
+  // opts.conductor: vista del conductor (Mis Viajes), sin el peso estimado ante balanza fuera de servicio
+  function openTicketDetail(k, opts) {
     if (!k) return;
+    var ocultar = !!(opts && opts.conductor);
     function field(label, value) {
       return '<div class="tkd-field"><span>' + esc(label) + '</span><strong>' + (value == null || value === '' ? '<em>—</em>' : esc(value)) + '</strong></div>';
     }
@@ -1876,9 +1898,11 @@
     var zooms = {};
     function card(kind, titulo, w, empty) {
       var photo = fotoPesaje(w, ref, kind);
-      if (w) zooms[kind] = { photo: photo, caption: 'Ticket ' + k.id + ' · ' + titulo + ' · ' + photoStamp(k, kind) + ' · ' + lecturaTxt(w) };
-      return pesajeCard({ title: titulo, w: w, photo: photo, key: kind, empty: empty });
+      if (w) zooms[kind] = { photo: photo, caption: 'Ticket ' + k.id + ' · ' + titulo + ' · ' + photoStamp(k, kind) + ' · ' + lecturaTxt(w, ocultar) };
+      return pesajeCard({ title: titulo, w: w, photo: photo, key: kind, empty: empty, ocultarEstimado: ocultar });
     }
+    var fs = ticketFueraServicio(k);
+    var netoTxt = ocultar && fs ? null : k.neto;
 
     var html =
       '<div class="modal__head"><div><h3>Detalle del ticket ' + esc(k.id) + '</h3>' +
@@ -1895,9 +1919,9 @@
       card('tara', 'Pesaje · Tara', k.tara, 'Sin pesaje de tara.') +
       card('cargado', 'Pesaje · Cargado', k.pesajeCargado, 'Sin pesaje cargado.') +
       '</div>' +
-      pesajeNeto(k.neto, k.estado !== 'Abierto' ? 'Por regularizar' : '—') +
+      pesajeNeto(netoTxt, k.estado !== 'Abierto' ? 'Por regularizar' : '—', !ocultar && fs) +
       '</div></div>' +
-      '<div class="modal__foot"><button class="btn btn-primary js-modal-cancel">Cerrar</button></div>';
+      '<div class="modal__foot"><button class="btn btn-outline js-modal-cancel">Cerrar</button></div>';
 
     var overlay = openModal(html);
     $('.modal', overlay).classList.add('modal-ticket');

@@ -270,7 +270,7 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
 }
 .link-action:hover { text-decoration: underline; }
-.btn-primary {
+.login-card .btn-primary {
   width: 100%;
   min-height: 52px;
   padding: 0 22px;
@@ -287,14 +287,14 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
   transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: inset 0 -3px 0 var(--brand-gold), 0 16px 28px -13px rgba(58, 59, 61, .8); }
-.btn-primary__default svg { color: var(--brand-gold); }
-.btn-primary:active { transform: translateY(0); }
-.btn-primary:disabled { opacity: .72; cursor: progress; transform: none; }
-.btn-primary__default { display: inline-flex; align-items: center; gap: 14px; }
-.btn-primary__default svg { width: 22px; height: 22px; transition: transform .16s ease; }
-.btn-primary:hover .btn-primary__default svg { transform: translateX(3px); }
-.spinner {
+.login-card .btn-primary:hover { transform: translateY(-1px); box-shadow: inset 0 -3px 0 var(--brand-gold), 0 16px 28px -13px rgba(58, 59, 61, .8); }
+.login-card .btn-primary__default svg { color: var(--brand-gold); }
+.login-card .btn-primary:active { transform: translateY(0); }
+.login-card .btn-primary:disabled { opacity: .72; cursor: progress; transform: none; }
+.login-card .btn-primary__default { display: inline-flex; align-items: center; gap: 14px; }
+.login-card .btn-primary__default svg { width: 22px; height: 22px; transition: transform .16s ease; }
+.login-card .btn-primary:hover .btn-primary__default svg { transform: translateX(3px); }
+.login-card .spinner {
   display: none;
   width: 20px;
   height: 20px;
@@ -303,8 +303,8 @@ img { display: block; max-width: 100%; }
   border-radius: 50%;
   animation: spin .7s linear infinite;
 }
-.btn-primary.is-loading .spinner { display: block; }
-.btn-primary.is-loading .btn-primary__default { display: none; }
+.login-card .btn-primary.is-loading .spinner { display: block; }
+.login-card .btn-primary.is-loading .btn-primary__default { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Fotografía y remate inferior */
@@ -622,7 +622,7 @@ img { display: block; max-width: 100%; }
   .field-icon, .field-toggle { flex-basis: 56px; width: 56px; }
   .field-row { margin: 5px 0 28px; }
   .checkbox, .link-action { font-size: 13px; }
-  .btn-primary { min-height: 62px; font-size: 17px; }
+  .login-card .btn-primary { min-height: 62px; font-size: 17px; }
   .login-card__assurance {
     margin-top: 30px;
     display: flex;
@@ -661,7 +661,7 @@ img { display: block; max-width: 100%; }
   .field-shell { min-height: 52px; }
   .field-shell input { height: 50px; }
   .field-row { margin-bottom: 16px; }
-  .btn-primary { min-height: 52px; }
+  .login-card .btn-primary { min-height: 52px; }
   .login-card__assurance { margin-top: 18px; gap: 9px; }
   .footer-wave-desktop { height: 112px; }
 }
