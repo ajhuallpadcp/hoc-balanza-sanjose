@@ -22,8 +22,8 @@
     misviajes: ['Mis Viajes', 'Volquetes propios · mineral y desmonte'],
     tablets:   ['Administración de Tablets', 'Enrolamiento, clasificación y asociación de dispositivos'],
     historial: ['Historial de pesajes', 'Tickets de extracción registrados por los conductores propios'],
-    garita:    ['Garita', 'Ingreso, tickets y asignación de tablets a terceros'],
-    terceros:  ['Operación de Volquetes de Terceros', 'Viajes dentro del ticket asignado']
+    garita:    ['Garita', 'Ingreso, estadías y asignación de tablets a terceros'],
+    terceros:  ['Operación de Volquetes de Terceros', 'Tickets dentro de la estadía asignada']
   };
 
   var RENDERERS = {}; // registrado por cada módulo: RENDERERS.dashboard = function(){...}

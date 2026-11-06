@@ -9,17 +9,16 @@
 
   /* ---------------------------------------------------------------------
      Nomenclatura de tickets (camiones propios y terceros):
-       AAAA-1NNNNN Mineral · AAAA-2NNNNN Concentrado · AAAA-3NNNNN Otros materiales
-     Un correlativo por categoría y año, compartido entre propios y terceros.
+       AAAA-NNNNNN (ej. 2026-000006): un único correlativo por año,
+     compartido entre propios y terceros, sin dígito de categoría.
      --------------------------------------------------------------------- */
-  var ticketSeq = { 1: 0, 2: 0, 3: 0 };
+  var ticketSeq = 0;
   function ticketCategoria(material) {
     return material === 'Mineral' ? 1 : material === 'Concentrado' ? 2 : 3;
   }
   function nextTicketId(material, year) {
-    var cat = ticketCategoria(material);
-    ticketSeq[cat] += 1;
-    return (year || new Date().getFullYear()) + '-' + cat + String(ticketSeq[cat]).padStart(5, '0');
+    ticketSeq += 1;
+    return (year || new Date().getFullYear()) + '-' + String(ticketSeq).padStart(6, '0');
   }
   function nextId(prefix, key) {
     var n = seq[key]++;
@@ -149,8 +148,8 @@
   }
 
   /* ---------------------------------------------------------------------
-     Tickets de terceros ya cerrados (días anteriores) con varios viajes, para
-     demostrar el detalle del ticket en Garita. No ocupan tablets del pool.
+     Estadías de terceros ya cerradas (días anteriores) con varios tickets, para
+     demostrar el detalle de la estadía en Garita. No ocupan tablets del pool.
      --------------------------------------------------------------------- */
   function buildEstadiasSeed() {
     function dayInfo(back) {
@@ -179,7 +178,7 @@
       var day = dayInfo(d.back);
       var viajes = d.viajes.map(function (t) {
         var salidaEst = d.sentido === 'cargado' ? 'vacio' : 'cargado';
-        var v = { id: nextId('VJ', 'viaje'), estado: 'Cerrado', sentido: d.sentido, cargado: null, vacio: null, intermedio: null, neto: null };
+        var v = { id: nextTicketId(d.tipoCarga, day.year), estado: 'Cerrado', sentido: d.sentido, cargado: null, vacio: null, intermedio: null, neto: null };
         if (t[5] && t[5].outOfService) {
           v[d.sentido] = w(null, day.dm + ' ' + t[0], { outOfService: true, fileName: 'evidencia_balanza_fueraservicio.jpg' });
         } else {
@@ -192,7 +191,7 @@
         return v;
       }).reverse(); // el viaje más reciente primero, como en la operación real
       return {
-        id: nextId('EST', 'estadia'), ticket: nextTicketId(d.tipoCarga, day.year),
+        id: nextId('EST', 'estadia'),
         empresa: d.empresa, tipoCarga: d.tipoCarga, placa: d.placa, placaSecundaria: d.placaSecundaria,
         conductor: d.conductor, documento: d.documento, pin: String(4100 + d.viajes.length * 37), destino: d.destino,
         tabletId: null, viajes: viajes, estado: 'cerrada',
@@ -250,7 +249,8 @@
     // material: tipo de material (propios) o tipo de carga (terceros)
     genTicketId: function (material) { return nextTicketId(material); },
     ticketCategoria: ticketCategoria,
-    genViajeId: function () { return nextId('VJ', 'viaje'); },
+    // Cada viaje de un tercero dentro de la estadía es un ticket (misma nomenclatura que los propios)
+    genViajeId: function (material) { return nextTicketId(material); },
     genEstadiaId: function () { return nextId('EST', 'estadia'); },
     genTabletId: function () {
       var max = 0;
@@ -319,7 +319,7 @@
     reset: function () {
       this.turno = { activo: false, camion: null, turnoNombre: null, tara: null, iniciadoEn: null };
       this.tickets = [];
-      ticketSeq = { 1: 0, 2: 0, 3: 0 };
+      ticketSeq = 0;
       this.registrosHist = buildRegistrosSeed();
       seq.viaje = 1; seq.estadia = 1;
       this.estadias = buildEstadiasSeed();

@@ -1828,3 +1828,10 @@ select.plain:focus, input.plain:focus, textarea.plain:focus{ border-color: var(-
   .topbar{ flex-wrap: nowrap; }
   .topbar > div:first-child{ flex: 1 1 0; }
 }
+
+/* Campos bloqueados (datos del turno en Nuevo viaje) */
+input.plain.is-locked{
+  background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-600);
+  font-weight: 600; cursor: not-allowed; min-height: var(--tap, 44px);
+}
+input.plain.is-locked:focus{ border-color: var(--gray-200); }
