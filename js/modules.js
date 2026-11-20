@@ -18,13 +18,24 @@
     if (status === 'error') return '<span class="badge badge-danger">Error</span>';
     return '<span class="badge badge-success">Sincronizado</span>';
   }
+  // Catalogos de HOC: se muestra "codigo · nombre" (lo que se envia es el codigo)
+  function withCode(v) { var c = S.codigos && S.codigos[v]; return c ? c + ' · ' + v : v; }
   function optionList(arr, current) {
-    return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+    return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(withCode(v)) + '</option>'; }).join('');
   }
   function fieldSel(label, id, options, extra) {
     return '<div><label class="form-label">' + esc(label) + '</label>' +
       '<select class="plain" id="' + id + '">' + options + '</select>' + (extra || '') + '</div>';
   }
+  // Patente (RF014): letras y digitos en mayusculas, sin guiones ni espacios, hasta 10 caracteres
+  var PLATE_FIELDS = ['f-placa', 'f-placa-sec', 'f-camion'];
+  function normalizePlate(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10); }
+  document.addEventListener('input', function (ev) {
+    var el = ev.target;
+    if (!el || el.readOnly || PLATE_FIELDS.indexOf(el.id) < 0) return;
+    var fixed = normalizePlate(el.value);
+    if (fixed !== el.value) el.value = fixed;
+  });
   function fieldTxt(label, id, placeholder, value) {
     return '<div><label class="form-label">' + esc(label) + '</label>' +
       '<input class="plain" id="' + id + '" type="text" placeholder="' + esc(placeholder || '') + '" value="' + esc(value || '') + '"></div>';
@@ -36,7 +47,9 @@
      editar el peso antes de confirmar (w.value, w.manual = true).
      ----------------------------------------------------------------------- */
   function ocrDe(w) { return !w ? null : w.ocrValue != null ? w.ocrValue : (w.manual || w.estimated ? null : w.value); }
-  function fmtKg(v) { return v == null ? '—' : v.toLocaleString('es-PE') + ' kg'; }
+  // Pesos en toneladas con 3 decimales, como los guarda SIO (42.230 t). Internamente se manejan en kg.
+  function fmtT(v) { return v == null ? '—' : (v / 1000).toFixed(3) + ' t'; }
+  function fmtKg(v) { return fmtT(v); }
   // rows: filas adicionales del pesaje [etiqueta, valor] (fecha y hora, descarga / carga)
   // ocultarEstimado: vista del conductor, que no ve el peso estimado ante balanza fuera de servicio
   function lecturaHtml(w, rows, ocultarEstimado) {
@@ -82,8 +95,7 @@
       return '<span class="badge badge-warning" title="Balanza fuera de servicio · Evidencia en auditoría">Fuera de servicio (Evidencia)</span>';
     }
     if (w.value == null) return '<span class="muted" style="color:var(--gray-400)">—</span>';
-    var bits = [w.value.toLocaleString('es-PE') + ' kg'];
-    return w.value.toLocaleString('es-PE') + ' kg' +
+    return fmtT(w.value) +
       (w.estimated ? ' <span class="badge badge-warning" style="margin-left:4px;">Estimado</span>' : '') +
       '';
   }
@@ -221,13 +233,13 @@
       var html =
         '<div class="info-row"><span class="label">Turno asignado</span><span class="value"><strong>' + esc(turnoNombre) + '</strong></span></div>' +
         '<p class="form-hint" style="margin-top:10px;">Turno asignado automáticamente según la programación operativa.</p>';
-      confirmDialog({ title: 'Iniciar turno', subtitle: 'Camión V-101 · ' + S.users.propio.name, body: html, confirmLabel: 'Iniciar turno' }, function () {
+      confirmDialog({ title: 'Iniciar turno', subtitle: 'Camión AD101VC · ' + S.users.propio.name, body: html, confirmLabel: 'Iniciar turno' }, function () {
         S.turno.activo = true;
-        S.turno.camion = 'V-101';
+        S.turno.camion = 'AD101VC';
         S.turno.turnoNombre = turnoNombre;
         S.turno.iniciadoEn = S.nowStr();
-        S.addActivity('Inicio de turno', S.turno.turnoNombre + ' · Camión V-101', 'ok');
-        toast('Turno iniciado. Camión V-101 identificado automáticamente.', 'success');
+        S.addActivity('Inicio de turno', S.turno.turnoNombre + ' · Camión AD101VC', 'ok');
+        toast('Turno iniciado. Camión AD101VC identificado automáticamente.', 'success');
         Shell.refreshCurrent();
       });
     });
@@ -249,7 +261,7 @@
         res.ts = S.nowStr();
         S.turno.tara = res;
         S.enqueueSync('Tara', 'Tara ' + S.turno.camion);
-        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : ' · ' + res.value.toLocaleString('es-PE') + ' kg';
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : ' · ' + fmtT(res.value);
         S.addActivity('Tara registrada', 'Camión ' + S.turno.camion + actDet, 'ok');
         toast((res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Tara registrada.') + ' Ya puedes crear un nuevo viaje.', 'success');
         Shell.refreshCurrent();
@@ -270,7 +282,7 @@
         // Con balanza fuera de servicio el neto se calcula con el peso estimado (visible solo para el supervisor)
         k.neto = (res.value == null || !tara || tara.value == null) ? null : Math.max(0, res.value - tara.value);
         S.enqueueSync('Pesaje cargado', id);
-        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + res.value.toLocaleString('es-PE') + ' kg' : '');
+        var actDet = res.outOfService ? ' · Balanza fuera de servicio (evidencia)' : (res.value != null ? ' · ' + fmtT(res.value) : '');
         S.addActivity('Pesaje cargado', 'Ticket ' + id + actDet, 'ok');
         toast(res.outOfService ? 'Evidencia de balanza fuera de servicio registrada.' : 'Pesaje cargado registrado.', 'success');
         Shell.refreshCurrent();
@@ -304,31 +316,38 @@
       return '<div><label class="form-label" for="' + id + '">' + esc(label) + '</label>' +
         '<input class="plain is-locked" id="' + id + '" type="text" value="' + esc(value || '—') + '" readonly tabindex="-1" aria-readonly="true"></div>';
     };
+    var rutas = Object.keys(c.rutas);
     var html = '<div class="form-grid">' +
       locked('Camión', 'f-camion', S.turno.camion) +
       locked('Operador camión', 'f-opcamion', S.users.propio.name) +
       fieldSel('Tolva', 'f-tolva', optionList(c.tolvas)) +
       fieldSel('Labor', 'f-labor', optionList(c.labores)) +
-      fieldSel('Nivel', 'f-nivel', optionList(c.niveles)) +
-      fieldSel('Veta', 'f-veta', optionList(c.vetas)) +
-      fieldSel('Zona', 'f-zona', optionList(c.zonas)) +
+      locked('Nivel', 'f-nivel', withCode(c.laborInfo[c.labores[0]].nivel)) +
+      locked('Veta', 'f-veta', withCode(c.laborInfo[c.labores[0]].veta)) +
+      locked('Zona', 'f-zona', withCode(c.laborInfo[c.labores[0]].zona)) +
       fieldSel('Equipo Scoop', 'f-scoop', optionList(c.equiposScoop)) +
       fieldSel('Operador Scoop', 'f-opscoop', optionList(c.operadoresScoop)) +
       fieldSel('Tipo de material', 'f-material', optionList(c.tiposMaterial)) +
-      fieldSel('Punto intermedio / bocamina', 'f-punto', optionList(c.puntosIntermedios)) +
-      fieldSel('Destino', 'f-destino', optionList(c.destinos)) +
+      '</div>' +
+      '<h4 class="form-section-title">Datos de ruta</h4>' +
+      '<div class="form-grid">' +
+      fieldSel('Ruta', 'f-ruta', optionList(rutas)) +
+      fieldSel('Origen', 'f-origen', optionList(c.rutas[rutas[0]].origenes)) +
+      fieldSel('Intermedio', 'f-punto', optionList(c.rutas[rutas[0]].intermedios)) +
+      fieldSel('Destino', 'f-destino', optionList(c.rutas[rutas[0]].destinos)) +
       '</div>';
-    confirmDialog({ title: 'Nuevo viaje · Ticket de extracción', body: html, confirmLabel: 'Crear ticket' }, function () {
+    var overlay = confirmDialog({ title: 'Nuevo viaje · Ticket de extracción', body: html, confirmLabel: 'Crear ticket' }, function () {
       var now = new Date();
       var k = {
         id: S.genTicketId($('#f-material').value),
         fecha: S.todayStr(),
         horaCarguio: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
         turno: S.turno.turnoNombre, camion: S.turno.camion, operadorCamion: S.users.propio.name, tara: S.turno.tara,
-        veta: $('#f-veta').value, zona: $('#f-zona').value,
-        tolva: $('#f-tolva').value, labor: $('#f-labor').value, nivel: $('#f-nivel').value,
+        veta: c.laborInfo[$('#f-labor').value].veta, zona: c.laborInfo[$('#f-labor').value].zona,
+        tolva: $('#f-tolva').value, labor: $('#f-labor').value, nivel: c.laborInfo[$('#f-labor').value].nivel,
         equipoScoop: $('#f-scoop').value, operadorScoop: $('#f-opscoop').value,
-        tipoMaterial: $('#f-material').value, puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
+        tipoMaterial: $('#f-material').value, ruta: $('#f-ruta').value, origen: $('#f-origen').value,
+        puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
         estado: 'Abierto', pesajeCargado: null, descarga: null, neto: null
       };
       S.tickets.unshift(k);
@@ -336,6 +355,20 @@
       S.addActivity('Ticket creado', k.id + ' · ' + k.tipoMaterial + ' → ' + k.destino, 'ok');
       toast('Ticket ' + k.id + ' creado en estado Abierto.', 'success');
       Shell.refreshCurrent();
+    });
+    // Al cambiar la labor se completan su nivel, veta y zona (estructura de la labor en SIO)
+    $('#f-labor', overlay).addEventListener('change', function () {
+      var info = c.laborInfo[this.value];
+      $('#f-nivel', overlay).value = withCode(info.nivel);
+      $('#f-veta', overlay).value = withCode(info.veta);
+      $('#f-zona', overlay).value = withCode(info.zona);
+    });
+    // Al cambiar la ruta se recargan el origen, el intermedio y el destino de esa ruta
+    $('#f-ruta', overlay).addEventListener('change', function () {
+      var r = c.rutas[this.value];
+      $('#f-origen', overlay).innerHTML = optionList(r.origenes);
+      $('#f-punto', overlay).innerHTML = optionList(r.intermedios);
+      $('#f-destino', overlay).innerHTML = optionList(r.destinos);
     });
   }
 
@@ -845,7 +878,7 @@
 
     UI.on('.js-assoc', 'click', function () {
       var id = this.getAttribute('data-id');
-      var html = '<div class="form-grid">' + fieldTxt('Patente', 'f-camion', 'Ej. V-108') + '</div>';
+      var html = '<div class="form-grid">' + fieldTxt('Patente', 'f-camion', 'Ej. AD108VC') + '</div>';
       confirmDialog({ title: 'Asociar tablet a camión', subtitle: id, body: html, confirmLabel: 'Asociar' }, function () {
         var placa = ($('#f-camion').value || '').trim().toUpperCase();
         if (!placa) { toast('Ingresa la patente del camión.', 'error'); return; }
@@ -1230,10 +1263,10 @@
     $('#topbar-subtitle').textContent = 'Garita · detalle de la estadía y sus tickets';
 
     var fields = [
-      ['Empresa', e.empresa], ['Tipo de carga / material', e.tipoCarga || '—'],
+      ['Empresa', e.empresa], ['Tipo de material', e.tipoCarga || '—'],
       ['Patente', e.placa], ['Patente secundaria', e.placaSecundaria || '—'],
       ['Conductor', e.conductor], ['Documento', e.documento || '—'],
-      ['Destino / sector', e.destino || '—'], ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
+      ['Destino', e.destino || '—'], ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
       ['Ingreso', e.ingresoEn || '—'], ['Salida', e.salidaEn || '—']
     ];
     var total = e.viajes.length;
@@ -1256,7 +1289,7 @@
       '<div class="gtk-head__top"><div>' +
       '<span class="gtk-eyebrow">Estadía de tercero</span><h2>' + esc(e.id) + '</h2></div>' + estadiaBadge(e) + '</div>' +
       '<div class="gtk-data__grid">' + fields.map(function (f) {
-        return '<div class="tkd-field"><span>' + esc(f[0]) + '</span><strong>' + esc(f[1]) + '</strong></div>';
+        return '<div class="tkd-field"><span>' + esc(f[0]) + '</span><strong>' + esc(withCode(f[1])) + '</strong></div>';
       }).join('') + '</div>' +
       '</section>' +
       '<div class="gtk-section-head"><h3>Tickets</h3><span>' + total + ' ticket' + (total === 1 ? '' : 's') + ' · del más reciente al más antiguo</span></div>' +
@@ -1315,15 +1348,15 @@
       var c = S.catalogs;
       var html = '<div class="form-grid">' +
         fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros)) +
-        fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros)) +
-        fieldTxt('Patente', 'f-placa', 'Ej. ABC-123') +
-        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456') +
+        fieldSel('Tipo de material', 'f-carga', optionList(c.tiposCargaTerceros)) +
+        fieldTxt('Patente', 'f-placa', 'Ej. AF123JK') +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. AE115RT') +
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor') +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento') +
-        fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector)) +
+        fieldSel('Destino', 'f-destino', optionList(c.destinosSector)) +
         '</div>';
       confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
-        var placa = ($('#f-placa').value || 'S/PATENTE').toUpperCase();
+        var placa = normalizePlate($('#f-placa').value) || 'S/PATENTE';
         var pin = String(Math.floor(1000 + Math.random() * 9000));
         var e = {
           id: S.genEstadiaId(), empresa: $('#f-empresa').value, tipoCarga: $('#f-carga').value,
@@ -1441,12 +1474,12 @@
       var c = S.catalogs;
       var html = '<div class="form-grid">' +
         fieldSel('Empresa', 'f-empresa', optionList(c.empresasTerceros, e.empresa)) +
-        fieldSel('Tipo de carga / material', 'f-carga', optionList(c.tiposCargaTerceros, e.tipoCarga)) +
-        fieldTxt('Patente', 'f-placa', 'Ej. ABC-123', e.placa) +
-        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. XYZ-456', e.placaSecundaria) +
+        fieldSel('Tipo de material', 'f-carga', optionList(c.tiposCargaTerceros, e.tipoCarga)) +
+        fieldTxt('Patente', 'f-placa', 'Ej. AF123JK', e.placa) +
+        fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. AE115RT', e.placaSecundaria) +
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor', e.conductor) +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
-        fieldSel('Destino / sector', 'f-destino', optionList(c.destinosSector, e.destino)) +
+        fieldSel('Destino', 'f-destino', optionList(c.destinosSector, e.destino)) +
         '</div>';
       confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
         var placa = ($('#f-placa').value || '').trim().toUpperCase();
@@ -1557,7 +1590,7 @@
       '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(estadia.conductor) + '</span></div>' +
       '<div class="info-row"><span class="label">Documento</span><span class="value">' + esc(estadia.documento || '—') + '</span></div>' +
       '<div class="info-row"><span class="label">Tablet asignada</span><span class="value">' + esc(tablet ? (tablet.code || tablet.id) : '—') + '</span></div>' +
-      '<div class="info-row"><span class="label">Destino / sector</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
+      '<div class="info-row"><span class="label">Destino</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
       '</div></div>' +
 
       '<div class="card"><div class="card__head"><div><h3>Ticket en curso</h3><p>Pesaje de entrada → descarga / carga → pesaje de salida</p></div></div>' +
@@ -1610,7 +1643,7 @@
         '</div>';
     }
     else if (step === 'salida') btn = '<button class="btn btn-gold btn-block" id="btn-trip-salida">Registrar pesaje de salida (' + ESTADO_PESAJE[salidaEst].toLowerCase() + ')</button>';
-    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:17px;">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
+    else btn = '<div class="info-row"><span class="label">Peso neto</span><span class="value" style="color:var(--success-fg);font-size:17px;">' + (v.neto != null ? fmtT(v.neto) : '<span class="badge badge-warning">Sin peso neto · Evidencia</span>') + '</span></div>';
     return rows + '<div style="margin-top:12px;">' + btn + '</div>';
   }
 
@@ -1624,7 +1657,7 @@
       return '<tr><td><strong>' + v.id + '</strong></td>' +
         '<td>' + pesajeConEstado(entradaEst ? v[entradaEst] : null, entradaEst) + '</td>' +
         '<td>' + pesajeConEstado(salidaEst ? v[salidaEst] : null, salidaEst) + '</td>' +
-        '<td class="num">' + (v.neto != null ? v.neto.toLocaleString('es-PE') + ' kg' : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
+        '<td class="num">' + (v.neto != null ? fmtT(v.neto) : '<span class="muted" style="color:var(--gray-400)">—</span>') + '</td>' +
         '<td>' + (v.estado === 'Cerrado' ? '<span class="badge badge-success">Cerrado</span>' : '<span class="badge badge-info">En curso</span>') + '</td>' +
         '<td>' + syncBadge(syncStatusFor(v.id)) + '</td></tr>';
     }).join('');
@@ -1685,9 +1718,9 @@
         }
         v.estado = 'Cerrado';
         S.enqueueSync('Ticket tercero', v.id);
-        var actDet = v.neto != null ? ' · peso neto ' + v.neto.toLocaleString('es-PE') + ' kg' : ' · balanza fuera de servicio (evidencia)';
+        var actDet = v.neto != null ? ' · peso neto ' + fmtT(v.neto) : ' · balanza fuera de servicio (evidencia)';
         S.addActivity('Ticket cerrado', v.id + actDet, 'ok');
-        toast('Ticket cerrado.' + (v.neto != null ? ' Peso neto: ' + v.neto.toLocaleString('es-PE') + ' kg.' : ' Registrado con evidencia de balanza fuera de servicio.'), 'success');
+        toast('Ticket cerrado.' + (v.neto != null ? ' Peso neto: ' + fmtT(v.neto) + '.' : ' Registrado con evidencia de balanza fuera de servicio.'), 'success');
         if (inconsistente) toast('Atención: el peso cargado es menor o igual al peso vacío. Verifica los pesajes.', 'error');
         Shell.refreshCurrent();
       });
@@ -1733,7 +1766,7 @@
   function histMatchesEstado(k) {
     return !histFilters.estado || k.estado === histFilters.estado;
   }
-  function kgTxt(v) { return v == null ? '—' : v.toLocaleString('es-PE') + ' kg'; }
+  function kgTxt(v) { return fmtT(v); }
 
   function renderHistorial(root) {
     var all = histRegistros();
@@ -1779,7 +1812,7 @@
     }, root);
   }
 
-  // Peso compacto para la grilla: valor en kg y una marca corta si fue estimado o sin lectura
+  // Peso compacto para la grilla: valor en toneladas y una marca corta si fue estimado o sin lectura
   function ticketFueraServicio(k) {
     return !!((k.tara && k.tara.outOfService) || (k.pesajeCargado && k.pesajeCargado.outOfService));
   }
@@ -1801,7 +1834,7 @@
       return '<tr>' +
         '<td class="hist-nowrap"><strong>' + esc(k.id) + '</strong></td>' +
         '<td class="hist-nowrap">' + esc(k.fecha) + '</td>' +
-        '<td>' + (k.tipoMaterial === 'Mineral' ? '<span class="badge badge-gold">Mineral</span>' : '<span class="badge badge-neutral">Desmonte</span>') +
+        '<td>' + (k.tipoMaterial === 'Mineral' ? '<span class="badge badge-gold">Mineral</span>' : '<span class="badge badge-neutral">' + esc(k.tipoMaterial) + '</span>') +
         '</td>' +
         '<td class="num hist-nowrap">' + histWeight(k.tara) + '</td>' +
         '<td class="num hist-nowrap">' + histWeight(k.pesajeCargado) + '</td>' +
@@ -1899,7 +1932,7 @@
     if (!k) return;
     var ocultar = !!(opts && opts.conductor);
     function field(label, value) {
-      return '<div class="tkd-field"><span>' + esc(label) + '</span><strong>' + (value == null || value === '' ? '<em>—</em>' : esc(value)) + '</strong></div>';
+      return '<div class="tkd-field"><span>' + esc(label) + '</span><strong>' + (value == null || value === '' ? '<em>—</em>' : esc(withCode(value))) + '</strong></div>';
     }
     var ref = { id: k.id, camion: k.camion, fecha: k.fecha };
     var zooms = {};
@@ -1920,7 +1953,8 @@
       field('Tolva', k.tolva) + field('Fecha', k.fecha) + field('Hora carguío', k.horaCarguio) + field('Turno', k.turno) +
       field('Nivel', k.nivel) + field('Veta', k.veta) + field('Zona', k.zona) + field('Labor', k.labor) +
       field('Equipo Scoop', k.equipoScoop) + field('Op. Scoop', k.operadorScoop) + field('Camión', k.camion) + field('Op. Camión', k.operadorCamion) +
-      field('Tipo de material', k.tipoMaterial) + field('Punto intermedio', k.puntoIntermedio) + field('Destino', k.destino) +
+      field('Tipo de material', k.tipoMaterial) + field('Ruta', k.ruta) + field('Origen', k.origen) +
+      field('Intermedio', k.puntoIntermedio) + field('Destino', k.destino) +
       '</div>' +
       '<div class="pc-grid">' +
       card('tara', 'Pesaje · Tara', k.tara, 'Sin pesaje de tara.') +

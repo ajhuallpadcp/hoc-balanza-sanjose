@@ -328,7 +328,7 @@
         '</div>' +
         '<div class="ocr-unit">kg</div>' +
         '</div>' +
-        '<p class="form-hint">Revisa el valor contra el display fisico. Si no coincide, corrigelo antes de confirmar: el valor OCR original queda conservado para auditoria.</p>' +
+        '<p class="form-hint">Revisa el valor contra el display fisico. Si no coincide, corrigelo antes de confirmar: el valor OCR original queda conservado para auditoria. El sistema lo registra en toneladas con 3 decimales.</p>' +
         '<div class="ocr-manual-flag" id="manual-flag" style="display:none;">' + ICON.warn + ' Correccion manual registrada</div>' +
         '</div>';
       var input = $('#ocr-value', resultZone);
