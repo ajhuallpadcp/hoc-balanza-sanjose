@@ -187,13 +187,13 @@
     // sentido: cómo ingresa a la balanza; [hEntrada, hIntermedio, hSalida, pesoEntrada, pesoSalida, extra]
     var defs = [
       { back: 2, empresa: 'Transportes Andina S.A.C.', tipoCarga: 'Otros materiales', placa: 'AF482KD', placaSecundaria: 'AE115RT',
-        conductor: 'Pedro Rojas', documento: '30.458.912', destino: 'Almacén Central', ingreso: '07:12', salida: '15:48', sentido: 'cargado',
+        conductor: 'Pedro Rojas', documento: '30.458.912', ruta: 'Superficie', origen: 'Cancha Mineral 01 (A B C)', puntoIntermedio: '[Sin punto]', destino: 'Cancha Tolva Chancado', ingreso: '07:12', salida: '15:48', sentido: 'cargado',
         viajes: [['07:40', '08:35', '09:02', 38760, 12940], ['10:15', '11:05', '11:31', 37420, 12880, null, [37060, null]], ['13:20', '14:12', '14:40', 39110, 12910]] },
       { back: 1, empresa: 'Transportes Sur Perú', tipoCarga: 'Concentrado', placa: 'AC907LM', placaSecundaria: '',
-        conductor: 'Mario Vega', documento: '28.115.604', destino: 'Taller Mina', ingreso: '06:55', salida: '13:20', sentido: 'vacio',
+        conductor: 'Mario Vega', documento: '28.115.604', ruta: 'Superficie', origen: 'Cancha Mineral 02', puntoIntermedio: 'Cancha Ripio', destino: 'Chancadora Primaria', ingreso: '06:55', salida: '13:20', sentido: 'vacio',
         viajes: [['07:20', '08:10', '08:41', 13050, 41870, null, [null, 41630]], ['10:05', null, null, null, null, { outOfService: true }]] },
       { back: 1, empresa: 'Logística Tacna E.I.R.L.', tipoCarga: 'Otros materiales', placa: 'AD233PQ', placaSecundaria: '',
-        conductor: 'Raúl Díaz', documento: '33.902.177', destino: 'Campamento', ingreso: '09:30', salida: '12:05', sentido: 'cargado',
+        conductor: 'Raúl Díaz', documento: '33.902.177', ruta: 'Interior mina', origen: 'Bocamina San José', puntoIntermedio: '[Sin punto]', destino: 'Botadero Sur', ingreso: '09:30', salida: '12:05', sentido: 'cargado',
         viajes: [['09:52', '10:40', '11:08', 31240, 14320]] }
     ];
     var list = defs.map(function (d) {
@@ -215,7 +215,8 @@
       return {
         id: nextId('EST', 'estadia'),
         empresa: d.empresa, tipoCarga: d.tipoCarga, placa: d.placa, placaSecundaria: d.placaSecundaria,
-        conductor: d.conductor, documento: d.documento, pin: String(4100 + d.viajes.length * 37), destino: d.destino,
+        conductor: d.conductor, documento: d.documento, pin: String(4100 + d.viajes.length * 37),
+        ruta: d.ruta, origen: d.origen, puntoIntermedio: d.puntoIntermedio, destino: d.destino,
         tabletId: null, viajes: viajes, estado: 'cerrada',
         ingresoEn: day.dm + ' ' + d.ingreso, ingresoIso: day.iso, salidaEn: day.dm + ' ' + d.salida,
         balanzaFueraServicio: viajes.some(function (v) { return v[v.sentido] && v[v.sentido].outOfService; })

@@ -20,6 +20,28 @@
   }
   // Catalogos de HOC: se muestra "codigo · nombre" (lo que se envia es el codigo)
   function withCode(v) { var c = S.codigos && S.codigos[v]; return c ? c + ' · ' + v : v; }
+  // Datos de ruta (como en SIO): el origen, el intermedio y el destino dependen de la ruta
+  function routeSection(c, cur) {
+    cur = cur || {};
+    var rutas = Object.keys(c.rutas);
+    var ruta = c.rutas[cur.ruta] ? cur.ruta : rutas[0];
+    var r = c.rutas[ruta];
+    return '<h4 class="form-section-title">Datos de ruta</h4>' +
+      '<div class="form-grid">' +
+      fieldSel('Ruta', 'f-ruta', optionList(rutas, ruta)) +
+      fieldSel('Origen', 'f-origen', optionList(r.origenes, cur.origen)) +
+      fieldSel('Intermedio', 'f-punto', optionList(r.intermedios, cur.puntoIntermedio)) +
+      fieldSel('Destino', 'f-destino', optionList(r.destinos, cur.destino)) +
+      '</div>';
+  }
+  function bindRouteSection(overlay, c) {
+    $('#f-ruta', overlay).addEventListener('change', function () {
+      var r = c.rutas[this.value];
+      $('#f-origen', overlay).innerHTML = optionList(r.origenes);
+      $('#f-punto', overlay).innerHTML = optionList(r.intermedios);
+      $('#f-destino', overlay).innerHTML = optionList(r.destinos);
+    });
+  }
   function optionList(arr, current) {
     return arr.map(function (v) { return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>' + esc(withCode(v)) + '</option>'; }).join('');
   }
@@ -316,7 +338,6 @@
       return '<div><label class="form-label" for="' + id + '">' + esc(label) + '</label>' +
         '<input class="plain is-locked" id="' + id + '" type="text" value="' + esc(value || '—') + '" readonly tabindex="-1" aria-readonly="true"></div>';
     };
-    var rutas = Object.keys(c.rutas);
     var html = '<div class="form-grid">' +
       locked('Camión', 'f-camion', S.turno.camion) +
       locked('Operador camión', 'f-opcamion', S.users.propio.name) +
@@ -329,13 +350,7 @@
       fieldSel('Operador Scoop', 'f-opscoop', optionList(c.operadoresScoop)) +
       fieldSel('Tipo de material', 'f-material', optionList(c.tiposMaterial)) +
       '</div>' +
-      '<h4 class="form-section-title">Datos de ruta</h4>' +
-      '<div class="form-grid">' +
-      fieldSel('Ruta', 'f-ruta', optionList(rutas)) +
-      fieldSel('Origen', 'f-origen', optionList(c.rutas[rutas[0]].origenes)) +
-      fieldSel('Intermedio', 'f-punto', optionList(c.rutas[rutas[0]].intermedios)) +
-      fieldSel('Destino', 'f-destino', optionList(c.rutas[rutas[0]].destinos)) +
-      '</div>';
+      routeSection(c);
     var overlay = confirmDialog({ title: 'Nuevo viaje · Ticket de extracción', body: html, confirmLabel: 'Crear ticket' }, function () {
       var now = new Date();
       var k = {
@@ -364,12 +379,7 @@
       $('#f-zona', overlay).value = withCode(info.zona);
     });
     // Al cambiar la ruta se recargan el origen, el intermedio y el destino de esa ruta
-    $('#f-ruta', overlay).addEventListener('change', function () {
-      var r = c.rutas[this.value];
-      $('#f-origen', overlay).innerHTML = optionList(r.origenes);
-      $('#f-punto', overlay).innerHTML = optionList(r.intermedios);
-      $('#f-destino', overlay).innerHTML = optionList(r.destinos);
-    });
+    bindRouteSection(overlay, c);
   }
 
   /* =======================================================================
@@ -1266,7 +1276,9 @@
       ['Empresa', e.empresa], ['Tipo de material', e.tipoCarga || '—'],
       ['Patente', e.placa], ['Patente secundaria', e.placaSecundaria || '—'],
       ['Conductor', e.conductor], ['Documento', e.documento || '—'],
-      ['Destino', e.destino || '—'], ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
+      ['Ruta', e.ruta || '—'], ['Origen', e.origen || '—'],
+      ['Intermedio', e.puntoIntermedio || '—'], ['Destino', e.destino || '—'],
+      ['Tablet asignada', tablet ? (tablet.code || tablet.id) : '—'],
       ['Ingreso', e.ingresoEn || '—'], ['Salida', e.salidaEn || '—']
     ];
     var total = e.viajes.length;
@@ -1353,9 +1365,9 @@
         fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. AE115RT') +
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor') +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento') +
-        fieldSel('Destino', 'f-destino', optionList(c.destinosSector)) +
-        '</div>';
-      confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
+        '</div>' +
+        routeSection(c);
+      var overlay = confirmDialog({ title: 'Registrar ingreso de vehículo de tercero', body: html, confirmLabel: 'Crear estadía' }, function () {
         var placa = normalizePlate($('#f-placa').value) || 'S/PATENTE';
         var pin = String(Math.floor(1000 + Math.random() * 9000));
         var e = {
@@ -1364,7 +1376,8 @@
           conductor: $('#f-conductor').value || 'Sin registrar',
           documento: $('#f-documento').value || '—',
           pin: pin,
-          destino: $('#f-destino').value,
+          ruta: $('#f-ruta').value, origen: $('#f-origen').value,
+          puntoIntermedio: $('#f-punto').value, destino: $('#f-destino').value,
           tabletId: null, viajes: [], estado: 'activa', ingresoEn: S.nowStr(), ingresoIso: isoLocal(new Date())
         };
         S.estadias.unshift(e);
@@ -1373,6 +1386,7 @@
         toast('Estadía ' + e.id + ' registrada para ' + placa + '. PIN de acceso: ' + pin + '.', 'success');
         Shell.refreshCurrent();
       });
+      bindRouteSection(overlay, c);
     });
 
     UI.on('.js-assign-tablet', 'click', function () {
@@ -1479,9 +1493,9 @@
         fieldTxt('Patente secundaria', 'f-placa-sec', 'Ej. AE115RT', e.placaSecundaria) +
         fieldTxt('Conductor', 'f-conductor', 'Nombre del conductor', e.conductor) +
         fieldTxt('Documento', 'f-documento', 'DNI o N° de documento', e.documento === '—' ? '' : e.documento) +
-        fieldSel('Destino', 'f-destino', optionList(c.destinosSector, e.destino)) +
-        '</div>';
-      confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
+        '</div>' +
+        routeSection(c, e);
+      var overlay = confirmDialog({ title: 'Editar estadía', subtitle: e.id + ' · ' + e.placa, body: html, confirmLabel: 'Guardar cambios' }, function () {
         var placa = ($('#f-placa').value || '').trim().toUpperCase();
         if (!placa) { toast('La patente no puede estar vacía.', 'error'); return; }
         e.empresa = $('#f-empresa').value;
@@ -1490,6 +1504,9 @@
         e.placaSecundaria = ($('#f-placa-sec').value || '').trim().toUpperCase();
         e.conductor = ($('#f-conductor').value || '').trim() || 'Sin registrar';
         e.documento = ($('#f-documento').value || '').trim() || '—';
+        e.ruta = $('#f-ruta').value;
+        e.origen = $('#f-origen').value;
+        e.puntoIntermedio = $('#f-punto').value;
         e.destino = $('#f-destino').value;
         // Mantiene la patente visible en la tablet asignada
         var tablet = e.tabletId ? S.tablets.find(function (t) { return t.id === e.tabletId; }) : null;
@@ -1500,6 +1517,7 @@
         toast('Estadía ' + e.id + ' de ' + placa + ' actualizada.', 'success');
         Shell.refreshCurrent();
       });
+      bindRouteSection(overlay, c);
     }, root);
 
     UI.on('.js-reactivar', 'click', function () {
@@ -1590,7 +1608,10 @@
       '<div class="info-row"><span class="label">Conductor</span><span class="value">' + esc(estadia.conductor) + '</span></div>' +
       '<div class="info-row"><span class="label">Documento</span><span class="value">' + esc(estadia.documento || '—') + '</span></div>' +
       '<div class="info-row"><span class="label">Tablet asignada</span><span class="value">' + esc(tablet ? (tablet.code || tablet.id) : '—') + '</span></div>' +
-      '<div class="info-row"><span class="label">Destino</span><span class="value">' + esc(estadia.destino) + '</span></div>' +
+      '<div class="info-row"><span class="label">Ruta</span><span class="value">' + esc(withCode(estadia.ruta || '—')) + '</span></div>' +
+      '<div class="info-row"><span class="label">Origen</span><span class="value">' + esc(withCode(estadia.origen || '—')) + '</span></div>' +
+      '<div class="info-row"><span class="label">Intermedio</span><span class="value">' + esc(withCode(estadia.puntoIntermedio || '—')) + '</span></div>' +
+      '<div class="info-row"><span class="label">Destino</span><span class="value">' + esc(withCode(estadia.destino || '—')) + '</span></div>' +
       '</div></div>' +
 
       '<div class="card"><div class="card__head"><div><h3>Ticket en curso</h3><p>Pesaje de entrada → descarga / carga → pesaje de salida</p></div></div>' +
